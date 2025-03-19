@@ -112,17 +112,22 @@ def main():
             print("No Frame.")
             continue
 
-        # Convert OpenCV BGR image to RGB
-        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        # Flip the frame horizontally
-        frame = cv2.flip(frame, 1)
+        # Process OpenCV frame to create an OpenGL texture
+        frame_rgba = cv2.cvtColor(frame, cv2.COLOR_BGR2RGBA)
+        frame_rgba = cv2.flip(frame_rgba, 1)
+        texture_id = gl.glGenTextures(1)
+        gl.glBindTexture(gl.GL_TEXTURE_2D, texture_id)
+        gl.glTexParameteri(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_MIN_FILTER, gl.GL_LINEAR)
+        gl.glTexParameteri(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_MAG_FILTER, gl.GL_LINEAR)
+        gl.glTexImage2D(gl.GL_TEXTURE_2D, 0, gl.GL_RGBA, frame_rgba.shape[1], frame_rgba.shape[0],
+                        0, gl.GL_RGBA, gl.GL_UNSIGNED_BYTE, frame_rgba)
 
-        # Create Pygame surface from the frame
-        frame = np.rot90(frame)
-        frame = pygame.surfarray.make_surface(frame)
+        # Render the OpenGL texture in an ImGui window
+        imgui.begin("Video")
+        imgui.image(texture_id, frame_rgba.shape[1], frame_rgba.shape[0])
+        imgui.end()
 
-        # Blit the frame onto the screen
-        impl.render(frame, (0, 0))
+        gl.glDeleteTextures([texture_id])
 
 
         pygame.display.flip()
