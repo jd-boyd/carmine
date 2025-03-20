@@ -1,13 +1,12 @@
-from imgui.integrations.pygame import PygameRenderer
-import OpenGL.GL as gl
 import imgui
-import pygame
-import sys
+from imgui.integrations.glfw import GlfwRenderer
+import glfw
 import cv2
+import OpenGL.GL as gl
 import numpy as np
+from cv2_enumerate_cameras import enumerate_cameras
 from ultralytics import YOLO
 #from tracker import *
-from cv2_enumerate_cameras import enumerate_cameras
 
 camera_list = []
 for camera_info in enumerate_cameras():
@@ -17,67 +16,65 @@ for camera_info in enumerate_cameras():
 
 
 
+def create_glfw_window(window_name="PyImgui+GLFW+OpenCV", width=1280, height=720):
+    if not glfw.init():
+        raise Exception("GLFW initialization failed")
+    glfw.window_hint(glfw.CONTEXT_VERSION_MAJOR, 3)
+    glfw.window_hint(glfw.CONTEXT_VERSION_MINOR, 3)
+    glfw.window_hint(glfw.OPENGL_PROFILE, glfw.OPENGL_CORE_PROFILE)
+    glfw.window_hint(glfw.OPENGL_FORWARD_COMPAT, gl.GL_TRUE)
+    window = glfw.create_window(width, height, window_name, None, None)
+    if not window:
+        glfw.terminate()
+        raise Exception("GLFW window creation failed")
+    glfw.make_context_current(window)
+    return window
 
+def create_opengl_texture(image):
+    texture_id = gl.glGenTextures(1)
+    gl.glBindTexture(gl.GL_TEXTURE_2D, texture_id)
+    gl.glTexParameteri(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_MIN_FILTER, gl.GL_LINEAR)
+    gl.glTexParameteri(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_MAG_FILTER, gl.GL_LINEAR)
+    gl.glTexImage2D(gl.GL_TEXTURE_2D, 0, gl.GL_RGB, image.shape[1], image.shape[0], 0, gl.GL_BGR, gl.GL_UNSIGNED_BYTE, image)
+    return texture_id
+
+
+def update_opengl_texture(texture_id, image):
+    gl.glBindTexture(gl.GL_TEXTURE_2D, texture_id)
+    gl.glTexImage2D(gl.GL_TEXTURE_2D, 0, gl.GL_RGB, image.shape[1], image.shape[0], 0, gl.GL_BGR, gl.GL_UNSIGNED_BYTE, image)
+    gl.glBindTexture(gl.GL_TEXTURE_2D, 0)
+
+frame_counter = 0
 
 model=YOLO('yolov8s.pt')
 
-# Initialize Pygame
-pygame.init()
-
-vid_scale_area = (640, 360)
-
-# Set window dimensions
-width, height = size = 960, 540
-screen = pygame.display.set_mode((width, height), pygame.DOUBLEBUF | pygame.OPENGL | pygame.RESIZABLE)
-
-pygame.display.set_caption("Carmine")
-
-# Initialize OpenCV video capture
-cap = cv2.VideoCapture(1404)
-
-def load_texture_from_file(filename):
-    image = cv2.imread(filename, cv2.IMREAD_UNCHANGED)
-    if image is None:
-        print(f"Could not load image: {filename}")
-        return None, (0, 0)
-    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-    height, width, channels = image.shape
-    texture_id = gl.glGenTextures(1)
-    gl.glBindTexture(gl.GL_TEXTURE_2D, texture_id)
-    gl.glTexParameteri(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_WRAP_S, gl.GL_CLAMP_TO_EDGE)
-    gl.glTexParameteri(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_WRAP_T, gl.GL_CLAMP_TO_EDGE)
-    gl.glTexParameteri(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_MIN_FILTER, gl.GL_LINEAR)
-    gl.glTexParameteri(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_MAG_FILTER, gl.GL_LINEAR)
-    gl.glTexImage2D(gl.GL_TEXTURE_2D, 0, gl.GL_RGB, width, height, 0, gl.GL_RGB, gl.GL_UNSIGNED_BYTE, image)
-    gl.glBindTexture(gl.GL_TEXTURE_2D, 0)
-    return texture_id, (width, height)
 
 def main():
+    window = create_glfw_window()
     imgui.create_context()
-    impl = PygameRenderer()
+    impl = GlfwRenderer(window)
 
-    io = imgui.get_io()
-    io.display_size = size
-    texture1, size1 = load_texture_from_file("frame_1.jpg")
-    texture2, size2 = load_texture_from_file("frame_2.jpg")
+    #image = cv2.imread("frame_1.jpg") # Replace with your image path
 
-    show_custom_window = True
+    video_path = './AI_angles.MOV'
+    cap = cv2.VideoCapture(video_path)
+    ret, frame = cap.read()
+    height, width, channels = frame.shape
+    image = frame
 
-    while True:
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                sys.exit(0)
-            impl.process_event(event)
+    if image is None:
+        raise FileNotFoundError("Image not found. Please make sure 'image.jpg' exists in the same directory or provide the correct path.")
+    texture_id = create_opengl_texture(image)
+
+    running = True
+    while running:
+        if glfw.window_should_close(window):
+            running = False
+
+        glfw.poll_events()
         impl.process_inputs()
-        current_window_size = pygame.display.get_surface().get_size()
-        io.display_size = current_window_size
-
         imgui.new_frame()
-        imgui.set_next_window_position(0, 0)
-        imgui.set_next_window_size(io.display_size[0], io.display_size[1])
-        flags = imgui.WINDOW_NO_TITLE_BAR | imgui.WINDOW_NO_RESIZE | imgui.WINDOW_NO_MOVE | imgui.WINDOW_NO_SCROLLBAR | imgui.WINDOW_NO_SAVED_SETTINGS | imgui.WINDOW_NO_BACKGROUND
-        if imgui.begin("Main Working Area", flags):
-            imgui.end()
+
 
         if imgui.begin_main_menu_bar():
             if imgui.begin_menu("File", True):
@@ -87,10 +84,29 @@ def main():
                 )
 
                 if clicked_quit:
-                    sys.exit(0)
+                    running = False
 
                 imgui.end_menu()
             imgui.end_main_menu_bar()
+
+
+        global frame_counter
+
+        ret, frame = cap.read()
+        if ret:
+            height, width, channels = frame.shape
+            image = frame
+            update_opengl_texture(texture_id, image)
+            frame_counter += 1
+            if frame_counter == cap.get(cv2.CAP_PROP_FRAME_COUNT):
+                frame_counter = 0 #Or whatever as long as it is the same as next line
+                cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+
+        imgui.begin("OpenCV Image")
+        image_width, image_height = image.shape[1], image.shape[0]
+        imgui.image(texture_id, image_width, image_height)
+        imgui.end()
+
 
         if imgui.begin("Control Panel", True):
             imgui.text("Cameras")
@@ -112,47 +128,16 @@ def main():
                 imgui.text(f"Point {i}: Information")
             imgui.end()
 
-        if imgui.begin("Camera 1", True):
-            if texture1 is not None:
-                avail_w, avail_h = imgui.get_content_region_available()
-                imgui.image(texture1, avail_w, avail_h)
-            else:
-                imgui.text("No image loaded")
-            imgui.end()
 
-        if imgui.begin("Camera 2", True):
-            if texture2 is not None:
-                avail_w, avail_h = imgui.get_content_region_available()
-                imgui.image(texture2, avail_w, avail_h)
-            else:
-                imgui.text("No image loaded")
-            imgui.end()
-
-        # note: cannot use screen.fill((1, 1, 1)) because pygame's screen
-        #       does not support fill() on OpenGL sufraces
-        gl.glClearColor(1, 1, 1, 1)
+        gl.glClearColor(0.1, 0.1, 0.1, 1)
         gl.glClear(gl.GL_COLOR_BUFFER_BIT)
+
         imgui.render()
         impl.render(imgui.get_draw_data())
+        glfw.swap_buffers(window)
 
-        # ret, frame = cap.read()
-        # if not ret:
-        #     print("No Frame.")
-        #     continue
+    impl.shutdown()
+    glfw.terminate()
 
-        # # Process frame using pygame to render in a custom window region
-        # frame = cv2.flip(frame, 1)
-        # frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        # frame = np.rot90(frame)
-        # video_surface = pygame.surfarray.make_surface(frame)
-
-        # # Render the video frame in a custom Pygame window region
-        # screen.blit(video_surface, (10, 10))
-
-
-        pygame.display.flip()
-
-
-
-
-main()
+if __name__ == "__main__":
+    main()
