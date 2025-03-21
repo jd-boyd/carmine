@@ -6,14 +6,15 @@ import OpenGL.GL as gl
 import numpy as np
 from cv2_enumerate_cameras import enumerate_cameras
 from ultralytics import YOLO
-#from tracker import *
+
+from sources import create_opengl_texture, update_opengl_texture
+
 
 camera_list = []
 for camera_info in enumerate_cameras():
     desc = (camera_info.index, f'{camera_info.index}: {camera_info.name}')
     print(desc[1])
     camera_list.append(desc)
-
 
 
 def create_glfw_window(window_name="PyImgui+GLFW+OpenCV", width=1280, height=720):
@@ -30,26 +31,14 @@ def create_glfw_window(window_name="PyImgui+GLFW+OpenCV", width=1280, height=720
     glfw.make_context_current(window)
     return window
 
-def create_opengl_texture(image):
-    texture_id = gl.glGenTextures(1)
-    gl.glBindTexture(gl.GL_TEXTURE_2D, texture_id)
-    gl.glTexParameteri(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_MIN_FILTER, gl.GL_LINEAR)
-    gl.glTexParameteri(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_MAG_FILTER, gl.GL_LINEAR)
-    gl.glTexImage2D(gl.GL_TEXTURE_2D, 0, gl.GL_RGB, image.shape[1], image.shape[0], 0, gl.GL_BGR, gl.GL_UNSIGNED_BYTE, image)
-    return texture_id
 
-
-def update_opengl_texture(texture_id, image):
-    gl.glBindTexture(gl.GL_TEXTURE_2D, texture_id)
-    gl.glTexImage2D(gl.GL_TEXTURE_2D, 0, gl.GL_RGB, image.shape[1], image.shape[0], 0, gl.GL_BGR, gl.GL_UNSIGNED_BYTE, image)
-    gl.glBindTexture(gl.GL_TEXTURE_2D, 0)
-
-frame_counter = 0
 
 model=YOLO('yolov8s.pt')
 
 
 def main():
+    frame_counter = 0
+
     window = create_glfw_window()
     imgui.create_context()
     impl = GlfwRenderer(window)
@@ -59,12 +48,12 @@ def main():
     video_path = './AI_angles.MOV'
     cap = cv2.VideoCapture(video_path)
     ret, frame = cap.read()
-    height, width, channels = frame.shape
+    #height, width, channels = frame.shape
     image = frame
 
-    if image is None:
+    if frame is None:
         raise FileNotFoundError("Image not found. Please make sure 'image.jpg' exists in the same directory or provide the correct path.")
-    texture_id = create_opengl_texture(image)
+    texture_id = create_opengl_texture(frame)
 
     running = True
     while running:
@@ -90,21 +79,20 @@ def main():
             imgui.end_main_menu_bar()
 
 
-        global frame_counter
-
         ret, frame = cap.read()
         if ret:
-            height, width, channels = frame.shape
-            image = frame
-            update_opengl_texture(texture_id, image)
+            #height, width, channels = frame.shape
+            #image = frame
+            update_opengl_texture(texture_id, frame)
             frame_counter += 1
             if frame_counter == cap.get(cv2.CAP_PROP_FRAME_COUNT):
                 frame_counter = 0 #Or whatever as long as it is the same as next line
                 cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
 
         imgui.begin("OpenCV Image")
-        image_width, image_height = image.shape[1], image.shape[0]
-        imgui.image(texture_id, image_width, image_height)
+        if ret:
+            image_width, image_height = frame.shape[1], frame.shape[0]
+            imgui.image(texture_id, image_width, image_height)
         imgui.end()
 
 
