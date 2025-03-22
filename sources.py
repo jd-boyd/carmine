@@ -105,23 +105,30 @@ class VideoSource(Source):
         
 
     def get_next_frame(self):
-        ret, frame = self.cap.read()
+        # Only read a new frame if we need to - don't read on every UI frame
+        current_time = cv2.getTickCount() / cv2.getTickFrequency()
         
-        # If we've reached the end of the video
-        if not ret:
-            # Reset to the beginning
-            self.return_to_beginning()
-            # Try reading again
+        # Only process video at ~30fps regardless of UI refresh rate
+        if not hasattr(self, 'last_frame_time') or (current_time - self.last_frame_time) > 0.033:
             ret, frame = self.cap.read()
-            # If still no frame, there's a problem with the video
+            
+            # If we've reached the end of the video
             if not ret:
-                return None
-
-        processed_frame = process_frame(frame, self.model, 0.25)
-        
-        self.frame = processed_frame
-        update_opengl_texture(self.texture_id, self.frame)
-        self.frame_counter += 1
+                # Reset to the beginning
+                self.return_to_beginning()
+                # Try reading again
+                ret, frame = self.cap.read()
+                # If still no frame, there's a problem with the video
+                if not ret:
+                    return self.texture_id
+            
+            # Process frame with YOLO model
+            processed_frame = process_frame(frame, self.model, 0.25)
+            
+            self.frame = processed_frame
+            update_opengl_texture(self.texture_id, self.frame)
+            self.frame_counter += 1
+            self.last_frame_time = current_time
         
         return self.texture_id
 
