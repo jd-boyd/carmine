@@ -5,7 +5,7 @@ def create_opengl_texture(image):
     texture_id = gl.glGenTextures(1)
     gl.glBindTexture(gl.GL_TEXTURE_2D, texture_id)
     gl.glTexParameteri(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_MIN_FILTER, gl.GL_LINEAR)
-    gl.glTexParameteri(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_MAG_FILTER, gl.GL_LINEAR)
+#    gl.glTexParameteri(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_MAG_FILTER, gl.GL_LINEAR)
     gl.glTexImage2D(gl.GL_TEXTURE_2D, 0, gl.GL_RGB, image.shape[1], image.shape[0], 0, gl.GL_BGR, gl.GL_UNSIGNED_BYTE, image)
     return texture_id
 
@@ -36,15 +36,33 @@ class VideoSource(Source):
 
         self.video_path = filename
         self.cap = cv2.VideoCapture(self.video_path)
-        ret, self.frame = self.cap.read()
-
-        if self.frame is None:
+        ret, frame = self.cap.read()
+        self.frame = frame
+        if frame is None:
             raise FileNotFoundError("Image not found. Please make sure 'image.jpg' exists in the same directory or provide the correct path.")
-        texture_id = create_opengl_texture(self.frame)
 
+        self.height = frame.shape[0]
+        self.width = frame.shape[1]
+
+        self.texture_id = create_opengl_texture(frame)
+
+    def return_to_beginning(self):
+        self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+        
 
     def get_next_frame(self):
-        pass
+        ret, frame = self.cap.read()
+        self.frame = frame
+        if not ret:
+            return
+        
+        update_opengl_texture(self.texture_id, frame)
+        self.frame_counter += 1
+        if self.frame_counter == self.cap.get(cv2.CAP_PROP_FRAME_COUNT):
+            self.frame_counter = 0 
+            self.return_to_beginning()
+        return self.texture_id
+
 
 
 

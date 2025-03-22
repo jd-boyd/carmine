@@ -18,7 +18,7 @@ for camera_info in enumerate_cameras():
     camera_list.append(desc)
 
 
-def create_glfw_window(window_name="PyImgui+GLFW+OpenCV", width=1280, height=720):
+def create_glfw_window(window_name="Carmine", width=1280, height=720):
     if not glfw.init():
         raise Exception("GLFW initialization failed")
     glfw.window_hint(glfw.CONTEXT_VERSION_MAJOR, 3)
@@ -37,19 +37,11 @@ def create_glfw_window(window_name="PyImgui+GLFW+OpenCV", width=1280, height=720
 
 
 def main():
-    frame_counter = 0
-
     window = create_glfw_window()
     imgui.create_context()
     impl = GlfwRenderer(window)
 
     source_1 = sources.VideoSource('./AI_angles.MOV')
-
-    ret, frame = source_1.cap.read()
-
-    if frame is None:
-        raise FileNotFoundError("Image not found. Please make sure 'image.jpg' exists in the same directory or provide the correct path.")
-    texture_id = create_opengl_texture(frame)
 
     running = True
     while running:
@@ -59,7 +51,6 @@ def main():
         glfw.poll_events()
         impl.process_inputs()
         imgui.new_frame()
-
 
         if imgui.begin_main_menu_bar():
             if imgui.begin_menu("File", True):
@@ -74,21 +65,11 @@ def main():
                 imgui.end_menu()
             imgui.end_main_menu_bar()
 
-
-        ret, frame = source_1.cap.read()
-        if ret:
-            #height, width, channels = frame.shape
-            #image = frame
-            update_opengl_texture(texture_id, frame)
-            frame_counter += 1
-            if frame_counter == source_1.cap.get(cv2.CAP_PROP_FRAME_COUNT):
-                frame_counter = 0 #Or whatever as long as it is the same as next line
-                source_1.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-
+        tex_id = source_1.get_next_frame()
+        
         imgui.begin("OpenCV Image")
-        if ret:
-            image_width, image_height = frame.shape[1], frame.shape[0]
-            imgui.image(texture_id, image_width, image_height)
+        if tex_id:
+            imgui.image(tex_id, source_1.width, source_1.height)
         imgui.end()
 
 
