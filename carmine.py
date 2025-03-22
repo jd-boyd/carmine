@@ -67,9 +67,24 @@ def main():
 
         tex_id = source_1.get_next_frame()
         
+        # Set default window size for OpenCV Image window
+        default_width = 640
+        default_height = 360
+        imgui.set_next_window_size(default_width, default_height, imgui.FIRST_USE_EVER)
+        
         imgui.begin("OpenCV Image")
         if tex_id:
-            imgui.image(tex_id, source_1.width, source_1.height)
+            # Get available width and height of the ImGui window content area
+            avail_width = imgui.get_content_region_available_width()
+            
+            # Calculate aspect ratio to maintain proportions
+            aspect_ratio = source_1.width / source_1.height
+            
+            # Set display dimensions based on available width and aspect ratio
+            display_width = avail_width
+            display_height = display_width / aspect_ratio
+            
+            imgui.image(tex_id, display_width, display_height)
         imgui.end()
 
 
