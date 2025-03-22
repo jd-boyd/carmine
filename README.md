@@ -10,3 +10,8 @@ uv venv -p python3.12 venv
 venv\Scripts\activate
 
 uv pip install -r requirements.txt
+
+
+https://github.com/sergio11/vehicle_detection_tracker
+
+https://github.com/AlessioMichelassi/openPyVision_013

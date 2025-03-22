@@ -1,4 +1,5 @@
 import OpenGL.GL as gl
+import cv2
 
 def create_opengl_texture(image):
     texture_id = gl.glGenTextures(1)
@@ -23,6 +24,7 @@ class Source:
 class StillSource(Source):
     def __init__(self, filename):
         self.filename = filename
+        #image = cv2.imread("frame_1.jpg") # Replace with your image path
 
     def get_next_frame(self):
         pass
@@ -33,14 +35,12 @@ class VideoSource(Source):
         self.frame_counter = 0
 
         self.video_path = filename
-        self.cap = cv2.VideoCapture(video_path)
-        ret, self,frame = cap.read()
-        #height, width, channels = frame.shape
-        image = frame
+        self.cap = cv2.VideoCapture(self.video_path)
+        ret, self.frame = self.cap.read()
 
-        if image is None:
+        if self.frame is None:
             raise FileNotFoundError("Image not found. Please make sure 'image.jpg' exists in the same directory or provide the correct path.")
-        texture_id = create_opengl_texture(image)
+        texture_id = create_opengl_texture(self.frame)
 
 
     def get_next_frame(self):

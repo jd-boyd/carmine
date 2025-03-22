@@ -7,6 +7,7 @@ import numpy as np
 from cv2_enumerate_cameras import enumerate_cameras
 from ultralytics import YOLO
 
+import sources
 from sources import create_opengl_texture, update_opengl_texture
 
 
@@ -32,8 +33,7 @@ def create_glfw_window(window_name="PyImgui+GLFW+OpenCV", width=1280, height=720
     return window
 
 
-
-model=YOLO('yolov8s.pt')
+#model=YOLO('yolov8s.pt')
 
 
 def main():
@@ -43,13 +43,9 @@ def main():
     imgui.create_context()
     impl = GlfwRenderer(window)
 
-    #image = cv2.imread("frame_1.jpg") # Replace with your image path
+    source_1 = sources.VideoSource('./AI_angles.MOV')
 
-    video_path = './AI_angles.MOV'
-    cap = cv2.VideoCapture(video_path)
-    ret, frame = cap.read()
-    #height, width, channels = frame.shape
-    image = frame
+    ret, frame = source_1.cap.read()
 
     if frame is None:
         raise FileNotFoundError("Image not found. Please make sure 'image.jpg' exists in the same directory or provide the correct path.")
@@ -79,15 +75,15 @@ def main():
             imgui.end_main_menu_bar()
 
 
-        ret, frame = cap.read()
+        ret, frame = source_1.cap.read()
         if ret:
             #height, width, channels = frame.shape
             #image = frame
             update_opengl_texture(texture_id, frame)
             frame_counter += 1
-            if frame_counter == cap.get(cv2.CAP_PROP_FRAME_COUNT):
+            if frame_counter == source_1.cap.get(cv2.CAP_PROP_FRAME_COUNT):
                 frame_counter = 0 #Or whatever as long as it is the same as next line
-                cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                source_1.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
 
         imgui.begin("OpenCV Image")
         if ret:
