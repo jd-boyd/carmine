@@ -29,6 +29,8 @@ class ControlPanel:
         # Camera points
         self.camera1_points = [0, 0, 0, 0]  # 4 points for camera 1
         self.camera2_points = [0, 0, 0, 0]  # 4 points for camera 2
+
+        self.field_size = [160, 300]
         
         # Points of interest information
         self.poi_info = ["" for _ in range(10)]  # Info for 10 POIs
@@ -45,6 +47,18 @@ class ControlPanel:
             )
             imgui.separator()
 
+            imgui.text("Field Size")
+            changed, self.field_size[0] = imgui.input_int(
+                "Width", self.field_size[0]
+            )
+
+            changed, self.field_size[1] = imgui.input_int(
+                "Height", self.field_size[1]
+            )
+
+            
+            imgui.separator()
+            
             imgui.text("Fields")
             imgui.text("Camera1 Numerical Points")
             for i in range(4):
