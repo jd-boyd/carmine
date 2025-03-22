@@ -69,7 +69,9 @@ def main():
         
         # Set default window size for OpenCV Image window
         default_width = 640
-        default_height = 360
+        # Calculate the correct height based on the video's aspect ratio
+        aspect_ratio = source_1.width / source_1.height
+        default_height = default_width / aspect_ratio
         imgui.set_next_window_size(default_width, default_height, imgui.FIRST_USE_EVER)
         
         imgui.begin("OpenCV Image")

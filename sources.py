@@ -52,15 +52,21 @@ class VideoSource(Source):
 
     def get_next_frame(self):
         ret, frame = self.cap.read()
-        self.frame = frame
-        if not ret:
-            return
         
+        # If we've reached the end of the video
+        if not ret:
+            # Reset to the beginning
+            self.return_to_beginning()
+            # Try reading again
+            ret, frame = self.cap.read()
+            # If still no frame, there's a problem with the video
+            if not ret:
+                return None
+        
+        self.frame = frame
         update_opengl_texture(self.texture_id, frame)
         self.frame_counter += 1
-        if self.frame_counter == self.cap.get(cv2.CAP_PROP_FRAME_COUNT):
-            self.frame_counter = 0 
-            self.return_to_beginning()
+        
         return self.texture_id
 
 
