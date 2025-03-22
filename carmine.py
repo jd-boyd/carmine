@@ -159,6 +159,11 @@ def main():
         
         imgui.begin("OpenCV Image")
         if tex_id:
+            # Get window position (needed for mouse position calculation)
+            window_pos_x, window_pos_y = imgui.get_window_position()
+            # Get cursor position (for content region position)
+            cursor_pos_x, cursor_pos_y = imgui.get_cursor_screen_pos()
+            
             # Get available width and height of the ImGui window content area
             avail_width = imgui.get_content_region_available_width()
             
@@ -169,7 +174,48 @@ def main():
             display_width = avail_width
             display_height = display_width / aspect_ratio
             
+            # Draw the image
             imgui.image(tex_id, display_width, display_height)
+            
+            # Draw crosshairs when hovering over the image
+            if imgui.is_item_hovered():
+                # Get mouse position
+                mouse_x, mouse_y = imgui.get_io().mouse_pos
+                
+                # Only draw if mouse is inside the image area
+                if (cursor_pos_x <= mouse_x <= cursor_pos_x + display_width and
+                    cursor_pos_y <= mouse_y <= cursor_pos_y + display_height):
+                    
+                    # Draw vertical line
+                    draw_list = imgui.get_window_draw_list()
+                    draw_list.add_line(
+                        mouse_x, cursor_pos_y, 
+                        mouse_x, cursor_pos_y + display_height, 
+                        imgui.get_color_u32_rgba(1, 1, 0, 0.5), 1.0
+                    )
+                    
+                    # Draw horizontal line
+                    draw_list.add_line(
+                        cursor_pos_x, mouse_y, 
+                        cursor_pos_x + display_width, mouse_y, 
+                        imgui.get_color_u32_rgba(1, 1, 0, 0.5), 1.0
+                    )
+            
+            # Check for mouse clicks inside the image
+            if imgui.is_item_hovered() and imgui.is_mouse_clicked(0):  # 0 = left mouse button
+                # Get mouse position
+                mouse_x, mouse_y = imgui.get_io().mouse_pos
+                
+                # Calculate relative position within the image
+                rel_x = (mouse_x - cursor_pos_x) / display_width
+                rel_y = (mouse_y - cursor_pos_y) / display_height
+                
+                # Convert to original video frame coordinates
+                frame_x = int(rel_x * source_1.width)
+                frame_y = int(rel_y * source_1.height)
+                
+                # Print to console
+                print(f"Click at video position: x={frame_x}, y={frame_y} (relative: {rel_x:.3f}, {rel_y:.3f})")
         imgui.end()
 
 
