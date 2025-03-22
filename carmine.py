@@ -18,6 +18,71 @@ for camera_info in enumerate_cameras():
     camera_list.append(desc)
 
 
+class ControlPanel:
+    def __init__(self, camera_list):
+        self.camera_list = camera_list
+        
+        # Camera selection
+        self.selected_camera1 = 0
+        self.selected_camera2 = 0
+        
+        # Camera points
+        self.camera1_points = [0, 0, 0, 0]  # 4 points for camera 1
+        self.camera2_points = [0, 0, 0, 0]  # 4 points for camera 2
+        
+        # Points of interest information
+        self.poi_info = ["" for _ in range(10)]  # Info for 10 POIs
+    
+    def draw(self):
+        """Draw the control panel UI and update its values"""
+        if imgui.begin("Control Panel", True):
+            imgui.text("Cameras")
+            changed1, self.selected_camera1 = imgui.combo(
+                "Camera 1", self.selected_camera1, [c[1] for c in self.camera_list]
+            )
+            changed2, self.selected_camera2 = imgui.combo(
+                "Camera 2", self.selected_camera2, [c[1] for c in self.camera_list]
+            )
+            imgui.separator()
+
+            imgui.text("Fields")
+            imgui.text("Camera1 Numerical Points")
+            for i in range(4):
+                changed, self.camera1_points[i] = imgui.input_int(
+                    f"Camera1 Point {i+1}", self.camera1_points[i]
+                )
+                
+            imgui.text("Camera2 Numerical Points")
+            for i in range(4):
+                changed, self.camera2_points[i] = imgui.input_int(
+                    f"Camera2 Point {i+1}", self.camera2_points[i]
+                )
+            imgui.separator()
+
+            imgui.text("PoI")
+            for i in range(10):
+                imgui.text(f"Point {i+1}: {self.poi_info[i] or 'Information'}")
+            
+            imgui.end()
+    
+    def get_camera1_id(self):
+        """Get the selected camera1 ID"""
+        if self.selected_camera1 < len(self.camera_list):
+            return self.camera_list[self.selected_camera1][0]
+        return None
+    
+    def get_camera2_id(self):
+        """Get the selected camera2 ID"""
+        if self.selected_camera2 < len(self.camera_list):
+            return self.camera_list[self.selected_camera2][0]
+        return None
+    
+    def set_poi_info(self, index, info):
+        """Set information for a specific POI"""
+        if 0 <= index < len(self.poi_info):
+            self.poi_info[index] = info
+
+
 def create_glfw_window(window_name="Carmine", width=1280, height=720):
     if not glfw.init():
         raise Exception("GLFW initialization failed")
@@ -33,15 +98,19 @@ def create_glfw_window(window_name="Carmine", width=1280, height=720):
     return window
 
 
-#model=YOLO('yolov8s.pt')
+model=YOLO('yolov8s.pt')
 
 
 def main():
     window = create_glfw_window()
     imgui.create_context()
     impl = GlfwRenderer(window)
+    
+    # Initialize the control panel
+    global control_panel
+    control_panel = ControlPanel(camera_list)
 
-    source_1 = sources.VideoSource('./AI_angles.MOV')
+    source_1 = sources.VideoSource('./AI_angles.MOV', model)
 
     running = True
     while running:
@@ -90,25 +159,8 @@ def main():
         imgui.end()
 
 
-        if imgui.begin("Control Panel", True):
-            imgui.text("Cameras")
-            _, selected_camera1 = imgui.combo("", 0, [c[1] for c in camera_list])
-            _, selected_camera2 = imgui.combo("", 1, [c[1] for c in camera_list])
-            imgui.separator()
-
-            imgui.text("Fields")
-            imgui.text("Camera1 Numerical Points")
-            for i in range(1, 5):
-                changed, value = imgui.input_int(f"Camera1 Point {i}", 0)
-            imgui.text("Camera2 Numerical Points")
-            for i in range(1, 5):
-                changed, value = imgui.input_int(f"Camera2 Point {i}", 0)
-            imgui.separator()
-
-            imgui.text("PoI")
-            for i in range(1, 11):
-                imgui.text(f"Point {i}: Information")
-            imgui.end()
+        # Draw the control panel and update its values
+        control_panel.draw()
 
 
         gl.glClearColor(0.1, 0.1, 0.1, 1)
