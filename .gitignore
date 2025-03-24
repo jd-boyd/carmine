@@ -176,4 +176,7 @@ cython_debug/
 # emacs
 *~
 \#*
+.\#*
 
+# Mac
+.DS_Store

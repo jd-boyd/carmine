@@ -19,55 +19,56 @@ def update_opengl_texture(texture_id, image):
 def process_frame(frame, model, conf_threshold):
     """
     Process a single frame with YOLOv8 to detect cars
-    
+
     Args:
         frame: Input frame
         model: YOLOv8 model
         conf_threshold: Confidence threshold
-    
+
     Returns:
         Processed frame with detections
     """
     # YOLOv8 class names (COCO dataset)
     class_names = model.names
-    
+
     # Car class ID in COCO dataset (2: car, 5: bus, 7: truck)
     vehicle_classes = [2, 5, 7]
-    
+
     # Get model prediction
     results = model.predict(frame, conf=conf_threshold)[0]
-    
+
     # Create a copy of the frame
     output_frame = frame.copy()
-    
+
     # Iterate through detections
     for det in results.boxes.data.cpu().numpy():
         x1, y1, x2, y2, conf, cls_id = det
         cls_id = int(cls_id)
-        
+
         # Check if the detected object is a vehicle
         if cls_id in vehicle_classes:
             # Draw bounding box
-            cv2.rectangle(output_frame, (int(x1), int(y1)), (int(x2), int(y2)), (0, 255, 0), 2)
-            
+            cv2.rectangle(output_frame, (int(x1), int(y1)), (int(x2), int(y2)),
+                          (0, 255, 0), 2)
+
             # Display class name and confidence
             vehicle_type = class_names[cls_id]
             label = f"{vehicle_type}: {conf:.2f}"
-            
+
             # Calculate label position
             label_size, _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 2)
             y1 = max(y1, label_size[1])
-            
+
             # Draw label background
-            cv2.rectangle(output_frame, (int(x1), int(y1) - label_size[1] - 5), 
+            cv2.rectangle(output_frame, (int(x1), int(y1) - label_size[1] - 5),
                          (int(x1) + label_size[0], int(y1)), (0, 255, 0), -1)
-            
+
             # Draw label text
-            cv2.putText(output_frame, label, (int(x1), int(y1) - 5), 
+            cv2.putText(output_frame, label, (int(x1), int(y1) - 5),
                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 2)
-    
+
     return output_frame
-    
+
 
 class Source:
     def get_next_frame(self):
@@ -83,7 +84,7 @@ class StillSource(Source):
         pass
 
 
-  
+
 class VideoSource(Source):
     def __init__(self, filename, model):
         self.frame_counter = 0
@@ -102,16 +103,16 @@ class VideoSource(Source):
 
     def return_to_beginning(self):
         self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-        
+
 
     def get_next_frame(self):
         # Only read a new frame if we need to - don't read on every UI frame
         current_time = cv2.getTickCount() / cv2.getTickFrequency()
-        
+
         # Only process video at ~30fps regardless of UI refresh rate
         if not hasattr(self, 'last_frame_time') or (current_time - self.last_frame_time) > 0.033:
             ret, frame = self.cap.read()
-            
+
             # If we've reached the end of the video
             if not ret:
                 # Reset to the beginning
@@ -121,15 +122,15 @@ class VideoSource(Source):
                 # If still no frame, there's a problem with the video
                 if not ret:
                     return self.texture_id
-            
+
             # Process frame with YOLO model
             processed_frame = process_frame(frame, self.model, 0.25)
-            
+
             self.frame = processed_frame
             update_opengl_texture(self.texture_id, self.frame)
             self.frame_counter += 1
             self.last_frame_time = current_time
-        
+
         return self.texture_id
 
 
