@@ -302,9 +302,9 @@ class ControlPanel:
     def draw_field_visualization(self):
         """Draw a visualization of the field with POI positions"""
         # Set default window size
-        # Field is wider than tall, so width should be greater (swapping dimensions)
+        # Rotate the field - height is now width, and width is now height
         default_width = 400
-        field_aspect_ratio = self.state.field_size[0] / self.state.field_size[1]  # Width / Height
+        field_aspect_ratio = self.state.field_size[1] / self.state.field_size[0]  # Height / Width (rotated)
         default_height = int(default_width / field_aspect_ratio)
         imgui.set_next_window_size(default_width, default_height, imgui.FIRST_USE_EVER)
 
@@ -323,11 +323,12 @@ class ControlPanel:
                 0, 2.0  # No rounding, 2px thickness
             )
 
-            # Draw POIs
+            # Draw POIs - swap x and y for rotation
             for i, (y, x) in enumerate(self.state.poi_positions):
-                # Calculate pixel position on the canvas
-                poi_x = canvas_pos_x + (x * canvas_width)
-                poi_y = canvas_pos_y + (y * canvas_height)
+                # Calculate pixel position on the canvas with swapped coordinates
+                # x becomes y and y becomes x to rotate 90 degrees
+                poi_x = canvas_pos_x + ((1-y) * canvas_width)  # 1-y to flip
+                poi_y = canvas_pos_y + (x * canvas_height)
 
                 # Draw X marker
                 marker_size = 5.0
