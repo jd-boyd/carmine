@@ -24,7 +24,7 @@ class Quad:
         self.uv_coords = [(0,0), (0,1), (1,1), (1,0)]
 
         self.src_points = np.array(self.quad_points, dtype=np.float32)
-        self.dst_points = np.array(uv_coords, dtype=np.float32)
+        self.dst_points = np.array(self.uv_coords, dtype=np.float32)
 
         self._calculate_transform_matrix()
 
@@ -40,8 +40,8 @@ class Quad:
         b = np.zeros(8)
 
         for i in range(4):
-            x, y = src_points[i]
-            u, v = dst_points[i]
+            x, y = self.src_points[i]
+            u, v = self.dst_points[i]
 
             A[i*2, 0] = x
             A[i*2, 1] = y

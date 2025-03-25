@@ -4,21 +4,24 @@ import glfw
 import cv2
 import OpenGL.GL as gl
 import numpy as np
+import json
+import os
 from cv2_enumerate_cameras import enumerate_cameras
 from ultralytics import YOLO
+import PySimpleGUI as sg
 
 import sources
 from sources import create_opengl_texture, update_opengl_texture
 
-
-camera_list = []
-for camera_info in enumerate_cameras():
-    desc = (camera_info.index, f'{camera_info.index}: {camera_info.name}')
-    print(desc[1])
-    camera_list.append(desc)
+# Constants
+CONFIG_FILE = "carmine_config.json"
 
 
-class ControlPanel:
+
+class State:
+    """
+    Class to hold application state, separate from UI rendering.
+    """
     def __init__(self, camera_list):
         self.camera_list = camera_list
 
@@ -27,8 +30,12 @@ class ControlPanel:
         self.selected_camera2 = 0
 
         # Camera points
-        self.camera1_points = [0, 0, 0, 0]  # 4 points for camera 1
-        self.camera2_points = [0, 0, 0, 0]  # 4 points for camera 2
+        self.camera1_points = [[0, 0] for _ in range(4)]  # 4 points (x,y) for camera 1
+        self.camera2_points = [[0, 0] for _ in range(4)]  # 4 points (x,y) for camera 2
+
+        # Point selection state
+        self.waiting_for_camera1_point = -1  # Index of point we're waiting to set (-1 means not waiting)
+        self.waiting_for_camera2_point = -1  # Index of point we're waiting to set (-1 means not waiting)
 
         # Field dimensions (aspect ratio)
         self.field_size = [160, 300]  # [width, height]
@@ -50,49 +57,20 @@ class ControlPanel:
             (0.5, 0.8),  # Example position for POI 10
         ]
 
-    def draw(self):
-        """Draw the control panel UI and update its values"""
-        if imgui.begin("Control Panel", True):
-            imgui.text("Cameras")
-            changed1, self.selected_camera1 = imgui.combo(
-                "Camera 1", self.selected_camera1, [c[1] for c in self.camera_list]
-            )
-            changed2, self.selected_camera2 = imgui.combo(
-                "Camera 2", self.selected_camera2, [c[1] for c in self.camera_list]
-            )
-            imgui.separator()
+        # Load configuration if exists
+        self.load_config()
 
-            imgui.text("Field Size")
-            changed, self.field_size[0] = imgui.input_int(
-                "Width", self.field_size[0]
-            )
+    def set_camera_point(self, camera_num, point_index, x, y):
+        """Set a camera point to the given coordinates"""
+        if camera_num == 1:
+            self.camera1_points[point_index] = [x, y]
+            self.waiting_for_camera1_point = -1  # Reset waiting state
+        elif camera_num == 2:
+            self.camera2_points[point_index] = [x, y]
+            self.waiting_for_camera2_point = -1  # Reset waiting state
 
-            changed, self.field_size[1] = imgui.input_int(
-                "Height", self.field_size[1]
-            )
-
-
-            imgui.separator()
-
-            imgui.text("Fields")
-            imgui.text("Camera1 Numerical Points")
-            for i in range(4):
-                changed, self.camera1_points[i] = imgui.input_int(
-                    f"Camera1 Point {i+1}", self.camera1_points[i]
-                )
-
-            imgui.text("Camera2 Numerical Points")
-            for i in range(4):
-                changed, self.camera2_points[i] = imgui.input_int(
-                    f"Camera2 Point {i+1}", self.camera2_points[i]
-                )
-            imgui.separator()
-
-            imgui.text("PoI")
-            for i in range(10):
-                imgui.text(f"Point {i+1}: {self.poi_info[i] or 'Information'}")
-
-            imgui.end()
+        # Save configuration after updating points
+        self.save_config()
 
     def get_camera1_id(self):
         """Get the selected camera1 ID"""
@@ -110,16 +88,225 @@ class ControlPanel:
         """Set information for a specific POI"""
         if 0 <= index < len(self.poi_info):
             self.poi_info[index] = info
+            self.save_config()
+
+    def save_config(self):
+        """Save the current configuration to a JSON file"""
+        try:
+            config = {
+                'selected_camera1': self.selected_camera1,
+                'selected_camera2': self.selected_camera2,
+                'camera1_points': self.camera1_points,
+                'camera2_points': self.camera2_points,
+                'field_size': self.field_size,
+                'poi_info': self.poi_info,
+                'poi_positions': self.poi_positions
+            }
+
+            with open(CONFIG_FILE, 'w') as f:
+                json.dump(config, f, indent=4)
+            print(f"Configuration saved to {CONFIG_FILE}")
+        except Exception as e:
+            print(f"Error saving configuration: {e}")
+
+    def load_config(self):
+        """Load configuration from a JSON file if it exists"""
+        try:
+            if not os.path.exists(CONFIG_FILE):
+                print(f"No configuration file found at {CONFIG_FILE}")
+                return
+
+            with open(CONFIG_FILE, 'r') as f:
+                config = json.load(f)
+
+            # Load camera selection
+            if 'selected_camera1' in config:
+                self.selected_camera1 = config['selected_camera1']
+            if 'selected_camera2' in config:
+                self.selected_camera2 = config['selected_camera2']
+
+            # Load camera points
+            if 'camera1_points' in config:
+                self.camera1_points = config['camera1_points']
+            if 'camera2_points' in config:
+                self.camera2_points = config['camera2_points']
+
+            # Load field size
+            if 'field_size' in config:
+                self.field_size = config['field_size']
+
+            # Load POI info
+            if 'poi_info' in config:
+                self.poi_info = config['poi_info']
+
+            # Load POI positions
+            if 'poi_positions' in config:
+                self.poi_positions = config['poi_positions']
+
+            print(f"Configuration loaded from {CONFIG_FILE}")
+        except Exception as e:
+            print(f"Error loading configuration: {e}")
+
+    def reset_config(self):
+        """Reset configuration to default values"""
+        # Reset camera points
+        self.camera1_points = [[0, 0] for _ in range(4)]
+        self.camera2_points = [[0, 0] for _ in range(4)]
+
+        # Reset field size
+        self.field_size = [160, 300]
+
+        # Reset POI info
+        self.poi_info = ["" for _ in range(10)]
+
+        # Reset POI positions to defaults
+        self.poi_positions = [
+            (0.2, 0.3), (0.5, 0.5), (0.8, 0.7), (0.3, 0.8), (0.7, 0.2),
+            (0.1, 0.9), (0.9, 0.1), (0.4, 0.6), (0.6, 0.4), (0.5, 0.8)
+        ]
+
+
+        # Save the reset configuration
+        self.save_config()
+        print("Configuration reset to defaults")
+
+
+class ControlPanel:
+    """
+    UI component for displaying and manipulating application state.
+    """
+    def __init__(self, state):
+        self.state = state
+
+    def draw(self):
+        """Draw the control panel UI and update state values"""
+        if imgui.begin("Control Panel", True):
+            imgui.text("Cameras")
+            changed1, self.state.selected_camera1 = imgui.combo(
+                "Camera 1", self.state.selected_camera1, [c[1] for c in self.state.camera_list]
+            )
+            if changed1:
+                self.state.save_config()
+
+            changed2, self.state.selected_camera2 = imgui.combo(
+                "Camera 2", self.state.selected_camera2, [c[1] for c in self.state.camera_list]
+            )
+            if changed2:
+                self.state.save_config()
+            imgui.separator()
+
+            imgui.text("Field Size")
+            changed_width, self.state.field_size[0] = imgui.input_int(
+                "Width", self.state.field_size[0]
+            )
+
+            if changed_width:
+                self.state.save_config()
+
+            changed_height, self.state.field_size[1] = imgui.input_int(
+                "Height", self.state.field_size[1]
+            )
+
+            if changed_height:
+                self.state.save_config()
+
+            imgui.separator()
+
+            imgui.text("Fields")
+
+            # Camera 1 points with display and Set button
+            imgui.text("Camera1 Points")
+            for i in range(4):
+                # Display the current value as (x, y)
+                x, y = self.state.camera1_points[i]
+                imgui.text(f"Point {i+1}: ({x}, {y})")
+
+                # Indicate if we're waiting for this point to be set
+                if self.state.waiting_for_camera1_point == i:
+                    imgui.same_line()
+                    imgui.text_colored("Waiting for click on image...", 1, 0.5, 0, 1)
+
+                # Add Set button
+                imgui.same_line()
+
+                # Change button color/text if this is the active point waiting for selection
+                button_text = "Cancel" if self.state.waiting_for_camera1_point == i else "Set"
+                if imgui.button(f"{button_text}##cam1_{i}"):
+                    if self.state.waiting_for_camera1_point == i:
+                        # Cancel selection mode
+                        self.state.waiting_for_camera1_point = -1
+                    else:
+                        # Enter selection mode for this point
+                        self.state.waiting_for_camera1_point = i
+                        # Reset any other waiting state
+                        self.state.waiting_for_camera2_point = -1
+                        print(f"Click on the image to set Camera 1 Point {i+1}")
+
+            # Camera 2 points with display and Set button
+            imgui.text("Camera2 Points")
+            for i in range(4):
+                # Display the current value as (x, y)
+                x, y = self.state.camera2_points[i]
+                imgui.text(f"Point {i+1}: ({x}, {y})")
+
+                # Indicate if we're waiting for this point to be set
+                if self.state.waiting_for_camera2_point == i:
+                    imgui.same_line()
+                    imgui.text_colored("Waiting for click on image...", 1, 0.5, 0, 1)
+
+                # Add Set button
+                imgui.same_line()
+
+                # Change button color/text if this is the active point waiting for selection
+                button_text = "Cancel" if self.state.waiting_for_camera2_point == i else "Set"
+                if imgui.button(f"{button_text}##cam2_{i}"):
+                    if self.state.waiting_for_camera2_point == i:
+                        # Cancel selection mode
+                        self.state.waiting_for_camera2_point = -1
+                    else:
+                        # Enter selection mode for this point
+                        self.state.waiting_for_camera2_point = i
+                        # Reset any other waiting state
+                        self.state.waiting_for_camera1_point = -1
+                        print(f"Click on the image to set Camera 2 Point {i+1}")
+            imgui.separator()
+
+            imgui.text("PoI")
+            for i in range(10):
+                imgui.text(f"Point {i+1}: {self.state.poi_info[i] or 'Information'}")
+
+            imgui.separator()
+
+            # Config Management
+            imgui.text("Configuration")
+            if imgui.button("Reset to Defaults"):
+                if imgui.begin_popup_modal("Confirm Reset", True):
+                    imgui.text("Are you sure you want to reset all configuration to defaults?")
+                    imgui.text("This action cannot be undone.")
+                    imgui.separator()
+
+                    if imgui.button("Yes", 120, 0):
+                        self.state.reset_config()
+                        imgui.close_current_popup()
+
+                    imgui.same_line()
+                    if imgui.button("No", 120, 0):
+                        imgui.close_current_popup()
+
+                    imgui.end_popup()
+                else:
+                    imgui.open_popup("Confirm Reset")
+
+            imgui.end()
 
     def draw_field_visualization(self):
         """Draw a visualization of the field with POI positions"""
         # Set default window size
         # Field is wider than tall, so width should be greater (swapping dimensions)
         default_width = 400
-        field_aspect_ratio = self.field_size[1] / self.field_size[0]  # Width / Height
+        field_aspect_ratio = self.state.field_size[0] / self.state.field_size[1]  # Width / Height
         default_height = int(default_width / field_aspect_ratio)
-        imgui.set_next_window_size(default_width, default_height,
-                                   imgui.FIRST_USE_EVER)
+        imgui.set_next_window_size(default_width, default_height, imgui.FIRST_USE_EVER)
 
         if imgui.begin("Field Visualization"):
             # Get drawing area info
@@ -137,7 +324,7 @@ class ControlPanel:
             )
 
             # Draw POIs
-            for i, (y, x) in enumerate(self.poi_positions):
+            for i, (y, x) in enumerate(self.state.poi_positions):
                 # Calculate pixel position on the canvas
                 poi_x = canvas_pos_x + (x * canvas_width)
                 poi_y = canvas_pos_y + (y * canvas_height)
@@ -187,19 +374,53 @@ def create_glfw_window(window_name="Carmine", width=1280, height=720):
     return window
 
 
-model=YOLO('yolov8s.pt')
+def ask_for_file():
+    layout = [
+        [sg.Text("Select a file:")],
+        [sg.Input(key="-FILE-"), sg.FileBrowse()],
+        [sg.Button("OK"), sg.Button("Cancel")],
+    ]
+
+    window = sg.Window("File Browser", layout)
+
+    while True:
+        event, values = window.read()
+        if event == sg.WIN_CLOSED or event == "Cancel":
+            break
+        if event == "OK":
+            file_path = values["-FILE-"]
+            if file_path:
+                print(f"Selected file: {file_path}")
+            else:
+                print("No file selected")
+            break
+
+    window.close()
 
 
 def main():
+    camera_list = []
+    for camera_info in enumerate_cameras():
+        desc = (camera_info.index, f'{camera_info.index}: {camera_info.name}')
+        print(desc[1])
+        camera_list.append(desc)
+
+    model=YOLO('yolov8s.pt')
+
     window = create_glfw_window()
     imgui.create_context()
     impl = GlfwRenderer(window)
 
-    # Initialize the control panel
-    global control_panel
-    control_panel = ControlPanel(camera_list)
+    # Initialize application state
+    app_state = State(camera_list)
 
-    source_1 = sources.VideoSource('./AI_angles.MOV', model)
+    # Initialize the control panel with the state
+    global control_panel
+    control_panel = ControlPanel(app_state)
+
+    # Initialize video sources
+    source_1 = sources.VideoSource('./AI_angle_1.mov', model)
+    source_2 = sources.VideoSource('./AI_angle_2.mov', model)
 
     # Frame timing variables
     frame_time = 1.0/60.0  # Target 60 FPS
@@ -225,6 +446,15 @@ def main():
             # Start UI rendering
             if imgui.begin_main_menu_bar():
                 if imgui.begin_menu("File", True):
+                    clicked_save, selected_save = imgui.menu_item(
+                        "Save Config", "Ctrl+S", False, True
+                    )
+
+                    if clicked_save:
+                        app_state.save_config()
+
+                    imgui.separator()
+
                     clicked_quit, selected_quit = imgui.menu_item(
                         "Quit", "Ctrl+Q", False, True
                     )
@@ -263,6 +493,40 @@ def main():
 
                 # Draw the image
                 imgui.image(tex_id, display_width, display_height)
+
+                # Draw camera quads if they have points defined
+                if True:  # Always draw, not just on hover
+                    draw_list = imgui.get_window_draw_list()
+
+                    # Function to draw quad for a camera
+                    def draw_camera_quad(points, color):
+                        # Only draw if we have valid points
+                        if all(isinstance(p, list) and len(p) == 2 for p in points):
+                            # Calculate scaling factors to map image coords to screen coords
+                            scale_x = display_width / source_1.width
+                            scale_y = display_height / source_1.height
+
+                            # Convert image coordinates to screen coordinates
+                            screen_points = []
+                            for x, y in points:
+                                screen_x = cursor_pos_x + (x * scale_x)
+                                screen_y = cursor_pos_y + (y * scale_y)
+                                screen_points.append((screen_x, screen_y))
+
+                            # Draw the quad as connected lines
+                            for i in range(4):
+                                next_i = (i + 1) % 4
+                                draw_list.add_line(
+                                    screen_points[i][0], screen_points[i][1],
+                                    screen_points[next_i][0], screen_points[next_i][1],
+                                    color, 2.0  # 2px thick
+                                )
+
+                    # Draw Camera 1 quad in bright green
+                    draw_camera_quad(app_state.camera1_points, imgui.get_color_u32_rgba(0, 1, 0, 0.8))
+
+                    # Draw Camera 2 quad in bright blue
+                    draw_camera_quad(app_state.camera2_points, imgui.get_color_u32_rgba(0, 0, 1, 0.8))
 
                 # Draw crosshairs when hovering over the image
                 if imgui.is_item_hovered():
@@ -303,6 +567,19 @@ def main():
 
                     # Print to console
                     print(f"Click at video position: x={frame_x}, y={frame_y} (relative: {rel_x:.3f}, {rel_y:.3f})")
+
+                    # Check if we're waiting to set a camera point
+                    if app_state.waiting_for_camera1_point >= 0:
+                        # Set the camera 1 point
+                        point_idx = app_state.waiting_for_camera1_point
+                        app_state.set_camera_point(1, point_idx, frame_x, frame_y)
+                        print(f"Set Camera 1 Point {point_idx+1} to ({frame_x}, {frame_y})")
+
+                    elif app_state.waiting_for_camera2_point >= 0:
+                        # Set the camera 2 point
+                        point_idx = app_state.waiting_for_camera2_point
+                        app_state.set_camera_point(2, point_idx, frame_x, frame_y)
+                        print(f"Set Camera 2 Point {point_idx+1} to ({frame_x}, {frame_y})")
             imgui.end()
 
 
@@ -320,6 +597,8 @@ def main():
             impl.render(imgui.get_draw_data())
             glfw.swap_buffers(window)
 
+    # Save config before exiting
+    app_state.save_config()
     impl.shutdown()
     glfw.terminate()
 

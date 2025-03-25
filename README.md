@@ -12,6 +12,10 @@ venv\Scripts\activate
 uv pip install -r requirements.txt
 
 
+## Driver note:
+I had to go into system settings, search for login items and extensions, scroll down the the extensions section, then enable both driver extensions and camera extensions for blackmagic.
+
+
 https://github.com/sergio11/vehicle_detection_tracker
 
 https://github.com/AlessioMichelassi/openPyVision_013
