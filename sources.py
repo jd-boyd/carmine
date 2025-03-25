@@ -45,7 +45,7 @@ def update_opengl_texture(texture_id, image):
     gl.glBindTexture(gl.GL_TEXTURE_2D, 0)
 
 
-def process_frame(frame, model, conf_threshold):
+def process_frame_with_yolo(frame, model, conf_threshold=0.25):
     """
     Process a single frame with YOLOv8 to detect cars
 
@@ -120,80 +120,136 @@ def process_frame(frame, model, conf_threshold):
 
 
 class Source:
-    def get_next_frame(self):
-        raise NotImplemented
+    """Base class for all video sources"""
+    
+    def get_frame(self):
+        """
+        Return the current raw frame without any processing
+        
+        Returns:
+            numpy array: The current video frame
+        """
+        raise NotImplementedError
+        
+    def get_texture_id(self):
+        """
+        Return the OpenGL texture ID for the current frame
+        
+        Returns:
+            int: OpenGL texture ID
+        """
+        raise NotImplementedError
+    
+    @property
+    def width(self):
+        """Width of the source in pixels"""
+        raise NotImplementedError
+        
+    @property
+    def height(self):
+        """Height of the source in pixels"""
+        raise NotImplementedError
 
 
 class StillSource(Source):
-    def __init__(self, filename, model):
+    """Source that provides a single still image"""
+    
+    def __init__(self, filename):
         self.filename = filename
-        self.model = model
         self.frame = cv2.imread(self.filename)
-        self.height = frame.shape[0]
-        self.width = frame.shape[1]
+        if self.frame is None:
+            raise FileNotFoundError(f"Image not found at {filename}")
+            
+        self._width = self.frame.shape[1]
+        self._height = self.frame.shape[0]
+        self.texture_id = create_opengl_texture(self.frame)
 
-        self.texture_id = create_opengl_texture(frame)
-
-    def get_next_frame(self):
-        # Process frame with YOLO model
-        processed_frame = process_frame(frame, self.model, 0.25)
-
-        update_opengl_texture(self.texture_id, self.frame)
+    def get_frame(self):
+        return self.frame
+        
+    def get_texture_id(self):
         return self.texture_id
-
+        
+    @property
+    def width(self):
+        return self._width
+        
+    @property
+    def height(self):
+        return self._height
 
 
 class VideoSource(Source):
-    def __init__(self, filename, model):
+    """Source that provides frames from a video file"""
+    
+    def __init__(self, filename):
         self.frame_counter = 0
-        self.model = model
         self.video_path = filename
         self.cap = cv2.VideoCapture(self.video_path)
+        
         ret, frame = self.cap.read()
+        if not ret or frame is None:
+            raise FileNotFoundError(f"Could not read video from {filename}")
+            
         self.frame = frame
-        if frame is None:
-            raise FileNotFoundError("Image not found. Please make sure 'image.jpg' exists in the same directory or provide the correct path.")
-
-        self.height = frame.shape[0]
-        self.width = frame.shape[1]
-
+        self._width = frame.shape[1]
+        self._height = frame.shape[0]
         self.texture_id = create_opengl_texture(frame)
+        self.last_frame_time = cv2.getTickCount() / cv2.getTickFrequency()
 
     def return_to_beginning(self):
+        """Reset video to first frame"""
         self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
 
-
-
-    def get_next_frame(self):
-        # Only read a new frame if we need to - don't read on every UI frame
+    def get_frame(self):
+        """
+        Get the next frame from video, respecting frame rate limits
+        
+        Returns:
+            numpy array: Current video frame
+        """
         current_time = cv2.getTickCount() / cv2.getTickFrequency()
-
-        # Only process video at ~30fps regardless of UI refresh rate
-        if not hasattr(self, 'last_frame_time') or (current_time - self.last_frame_time) > 0.033:
+        
+        # Only grab new frames at ~30fps regardless of UI refresh rate
+        if (current_time - self.last_frame_time) > 0.033:
             ret, frame = self.cap.read()
-
-            # If we've reached the end of the video
+            
+            # If reached end of video, loop back to beginning
             if not ret:
-                # Reset to the beginning
                 self.return_to_beginning()
-                # Try reading again
                 ret, frame = self.cap.read()
-                # If still no frame, there's a problem with the video
-                if not ret:
-                    return self.texture_id
-
-            # Process frame with YOLO model
-            processed_frame = process_frame(frame, self.model, 0.25)
-
-            self.frame = processed_frame
+                if not ret:  # Still no frame after reset
+                    return self.frame
+                    
+            # Update current frame
+            self.frame = frame
             update_opengl_texture(self.texture_id, self.frame)
             self.frame_counter += 1
             self.last_frame_time = current_time
-
+            
+        return self.frame
+        
+    def get_texture_id(self):
+        """
+        Get the OpenGL texture ID for current frame
+        
+        Returns:
+            int: OpenGL texture ID
+        """
+        # Make sure we have the latest frame
+        self.get_frame()
         return self.texture_id
-
-
+        
+    @property
+    def width(self):
+        return self._width
+        
+    @property
+    def height(self):
+        return self._height
 
 
 class CameraSource(Source):
+    """Source that provides frames from a camera device"""
+    # TODO: Implement camera source
     pass
