@@ -420,7 +420,8 @@ def main():
     control_panel = ControlPanel(app_state)
 
     # Initialize video sources
-    source_1 = sources.VideoSource('./AI_angle_1.mov')
+    #source_1 = sources.VideoSource('./AI_angle_1.mov')
+    source_1 = sources.BMSource()
     source_2 = sources.VideoSource('./AI_angle_2.mov')
 
     # Frame timing variables
@@ -468,13 +469,13 @@ def main():
 
             # Get the raw frame
             raw_frame = source_1.get_frame()
-            
+
             # Process with YOLO if needed
             processed_frame = sources.process_frame_with_yolo(raw_frame, model)
-            
+
             # Update texture with processed frame
             sources.update_opengl_texture(source_1.get_texture_id(), processed_frame)
-            
+
             # Get texture ID for display
             tex_id = source_1.get_texture_id()
 
