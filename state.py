@@ -213,3 +213,31 @@ class State:
         # Save the reset configuration
         self.save_config()
         print("Configuration reset to defaults")
+
+    def calculate_poi_distances(self):
+        """
+        Calculate distances between the car and each point of interest.
+
+        Returns:
+            list: List of (poi_index, distance) tuples sorted by distance,
+                  or None if car position is not available
+        """
+        if self.car_field_position is None:
+            return None
+
+        car_x, car_y = self.car_field_position
+        distances = []
+
+        for i, (poi_x, poi_y) in enumerate(self.poi_positions):
+            # Convert normalized coordinates to actual field dimensions
+            car_field_x = car_x * self.field_size[0]
+            car_field_y = car_y * self.field_size[1]
+            poi_field_x = poi_x * self.field_size[0]
+            poi_field_y = poi_y * self.field_size[1]
+
+            # Calculate Euclidean distance
+            distance = np.sqrt((car_field_x - poi_field_x)**2 + (car_field_y - poi_field_y)**2)
+            distances.append((i, distance))
+
+        # Sort by distance
+        return distances

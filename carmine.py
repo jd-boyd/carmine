@@ -125,6 +125,11 @@ class FieldVisualization:
                     "CAR"
                 )
 
+            # Get POI distances if car position is available
+            poi_distances = None
+            if self.state.car_field_position is not None:
+                poi_distances = self.state.calculate_poi_distances()
+                
             # Draw POIs - swap x and y for rotation
             for i, (y, x) in enumerate(self.state.poi_positions):
                 # Calculate pixel position on the canvas with swapped coordinates
@@ -156,6 +161,18 @@ class FieldVisualization:
                     imgui.get_color_u32_rgba(1, 1, 0, 1),  # Yellow color
                     f"{i+1}"
                 )
+                
+                # Draw distance above the POI if available
+                if poi_distances is not None:
+                    for poi_idx, distance in poi_distances:
+                        if poi_idx == i:
+                            draw_list.add_text(
+                                poi_x - marker_size - 10,
+                                poi_y - marker_size - 15,
+                                imgui.get_color_u32_rgba(0, 1, 1, 1),  # Cyan color
+                                f"{distance:.1f}"
+                            )
+                            break
 
             # Check for mouse clicks inside the field visualization
             if imgui.is_window_hovered() and imgui.is_window_focused() and imgui.is_mouse_clicked(0):
