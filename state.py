@@ -17,9 +17,7 @@ class State:
         self.selected_camera1 = 0
         self.selected_camera2 = 0
 
-        # Camera points
-        self.camera1_points = [[0, 0] for _ in range(4)]  # 4 points (x,y) for camera 1
-        self.camera2_points = [[0, 0] for _ in range(4)]  # 4 points (x,y) for camera 2
+        self.reset_config()
 
         # Point selection state
         self.waiting_for_camera1_point = -1  # Index of point we're waiting to set (-1 means not waiting)
@@ -30,22 +28,8 @@ class State:
         self.highlighted_car = None  # Will store [x, y, width, height, confidence] of highlighted car in video coordinates
         self.car_field_position = None  # Will store (x, y) of the car position on the field (normalized coordinates)
 
-        # Field dimensions (aspect ratio)
-        self.field_size = [160, 300]  # [width, height]
-
-        # POI positions (normalized 0.0-1.0 coordinates on the field)
-        self.poi_positions = [
-            (0.2, 0.3),  # Example position for POI 1
-            (0.5, 0.5),  # Example position for POI 2
-            (0.8, 0.7),  # Example position for POI 3
-            (0.3, 0.8),  # Example position for POI 4
-            (0.7, 0.2),  # Example position for POI 5
-            (0.1, 0.9),  # Example position for POI 6
-            (0.9, 0.1),  # Example position for POI 7
-            (0.4, 0.6),  # Example position for POI 8
-            (0.6, 0.4),  # Example position for POI 9
-            (0.5, 0.8),  # Example position for POI 10
-        ]
+        self.c1_show_carbox = True
+        self.c1_show_mines = True
 
         # Load configuration if exists
         self.load_config()
@@ -209,10 +193,6 @@ class State:
             (0.2, 0.3), (0.5, 0.5), (0.8, 0.7), (0.3, 0.8), (0.7, 0.2),
             (0.1, 0.9), (0.9, 0.1), (0.4, 0.6), (0.6, 0.4), (0.5, 0.8)
         ]
-
-        # Save the reset configuration
-        self.save_config()
-        print("Configuration reset to defaults")
 
     def calculate_poi_distances(self):
         """

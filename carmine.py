@@ -88,7 +88,7 @@ class CameraDisplay:
             draw_camera_quad(self.state.camera1_points, imgui.get_color_u32_rgba(0, 1, 0, 0.8))
 
             # Draw POIs (mines) on the camera view
-            if self.state.camera1_points and all(isinstance(p, list) and len(p) == 2 for p in self.state.camera1_points):
+            if self.state.c1_show_mines and self.state.camera1_points and all(isinstance(p, list) and len(p) == 2 for p in self.state.camera1_points):
                 # Calculate scaling factors
                 scale_x = display_width / self.source.width
                 scale_y = display_height / self.source.height
@@ -461,38 +461,58 @@ class ControlPanel:
                         self.state.waiting_for_camera2_point = -1
                         print(f"Click on the image to set Camera 1 Point {i+1}")
 
-            # Camera 2 points with display and Set button
-            imgui.text("Camera2 Points:")
-            for i in range(4):
-                # Display the current value as (x, y)
-                x, y = self.state.camera2_points[i]
 
-                if i % 2:
-                    imgui.same_line()
-
-                imgui.text(f"{i+1}: ({x}, {y})")
-
-                # Indicate if we're waiting for this point to be set
-                if self.state.waiting_for_camera2_point == i:
-                    imgui.same_line()
-                    imgui.text_colored("Waiting for click on image...", 1, 0.5, 0, 1)
-
-                # Add Set button
-                imgui.same_line()
-
-                # Change button color/text if this is the active point waiting for selection
-                button_text = "Cancel" if self.state.waiting_for_camera2_point == i else "Set"
-                if imgui.button(f"{button_text}##cam2_{i}"):
-                    if self.state.waiting_for_camera2_point == i:
-                        # Cancel selection mode
-                        self.state.waiting_for_camera2_point = -1
-                    else:
-                        # Enter selection mode for this point
-                        self.state.waiting_for_camera2_point = i
-                        # Reset any other waiting state
-                        self.state.waiting_for_camera1_point = -1
-                        print(f"Click on the image to set Camera 2 Point {i+1}")
             imgui.separator()
+
+            imgui.text("Camera1 layers:")
+
+            changed, checked = imgui.checkbox("Car box", self.state.c1_show_carbox)
+            if changed:
+                self.state.c1_show_carbox = checked
+                print(f"Checkbox state changed to: {checked}")
+
+            changed, checked = imgui.checkbox("Mines", self.state.c1_show_mines)
+            if changed:
+                self.state.c1_show_mines = checked
+                print(f"Checkbox state changed to: {checked}")
+
+
+
+
+            imgui.separator()
+
+            # # Camera 2 points with display and Set button
+            # imgui.text("Camera2 Points:")
+            # for i in range(4):
+            #     # Display the current value as (x, y)
+            #     x, y = self.state.camera2_points[i]
+
+            #     if i % 2:
+            #         imgui.same_line()
+
+            #     imgui.text(f"{i+1}: ({x}, {y})")
+
+            #     # Indicate if we're waiting for this point to be set
+            #     if self.state.waiting_for_camera2_point == i:
+            #         imgui.same_line()
+            #         imgui.text_colored("Waiting for click on image...", 1, 0.5, 0, 1)
+
+            #     # Add Set button
+            #     imgui.same_line()
+
+            #     # Change button color/text if this is the active point waiting for selection
+            #     button_text = "Cancel" if self.state.waiting_for_camera2_point == i else "Set"
+            #     if imgui.button(f"{button_text}##cam2_{i}"):
+            #         if self.state.waiting_for_camera2_point == i:
+            #             # Cancel selection mode
+            #             self.state.waiting_for_camera2_point = -1
+            #         else:
+            #             # Enter selection mode for this point
+            #             self.state.waiting_for_camera2_point = i
+            #             # Reset any other waiting state
+            #             self.state.waiting_for_camera1_point = -1
+            #             print(f"Click on the image to set Camera 2 Point {i+1}")
+            # imgui.separator()
 
             imgui.text("Points of Interest")
             for i in range(10):
