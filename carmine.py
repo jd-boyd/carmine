@@ -15,6 +15,182 @@ from quad import Quad
 from state import State
 
 
+class CameraDisplay:
+    """
+    UI component for displaying camera view with overlays.
+    """
+    def __init__(self, state, source):
+        self.state = state
+        self.source = source
+
+    def draw(self):
+        """
+        Draw the camera view with overlays.
+
+        Args:
+            source: The video source to display
+        """
+        # Get texture ID for display
+        tex_id = self.source.get_texture_id()
+
+        # Set default window size for OpenCV Image window
+        default_width = 640
+        # Calculate the correct height based on the video's aspect ratio
+        aspect_ratio = self.source.width / self.source.height
+        default_height = default_width / aspect_ratio
+        imgui.set_next_window_size(default_width, default_height, imgui.FIRST_USE_EVER)
+
+        imgui.begin("Camnera 1")
+        if tex_id:
+            # Get window position (needed for mouse position calculation)
+            window_pos_x, window_pos_y = imgui.get_window_position()
+            # Get cursor position (for content region position)
+            cursor_pos_x, cursor_pos_y = imgui.get_cursor_screen_pos()
+
+            # Get available width and height of the ImGui window content area
+            avail_width = imgui.get_content_region_available_width()
+
+            # Calculate aspect ratio to maintain proportions
+            # Set display dimensions based on available width and aspect ratio
+            display_width = avail_width
+            display_height = avail_width / aspect_ratio
+
+            # Draw the image
+            imgui.image(tex_id, display_width, display_height)
+
+            draw_list = imgui.get_window_draw_list()
+
+            # Function to draw quad for a camera
+            def draw_camera_quad(points, color):
+                # Only draw if we have valid points
+                if all(isinstance(p, list) and len(p) == 2 for p in points):
+                    # Calculate scaling factors to map image coords to screen coords
+                    scale_x = display_width / self.source.width
+                    scale_y = display_height / self.source.height
+
+                    # Convert image coordinates to screen coordinates
+                    screen_points = []
+                    for x, y in points:
+                        screen_x = cursor_pos_x + (x * scale_x)
+                        screen_y = cursor_pos_y + (y * scale_y)
+                        screen_points.append((screen_x, screen_y))
+
+                    # Draw the quad as connected lines
+                    for i in range(4):
+                        next_i = (i + 1) % 4
+                        draw_list.add_line(
+                            screen_points[i][0], screen_points[i][1],
+                            screen_points[next_i][0], screen_points[next_i][1],
+                            color, 2.0  # 2px thick
+                        )
+
+            # Draw Camera 1 quad in bright green
+            draw_camera_quad(self.state.camera1_points, imgui.get_color_u32_rgba(0, 1, 0, 0.8))
+
+            # Draw POIs (mines) on the camera view
+            if self.state.camera1_points and all(isinstance(p, list) and len(p) == 2 for p in self.state.camera1_points):
+                # Calculate scaling factors
+                scale_x = display_width / self.source.width
+                scale_y = display_height / self.source.height
+
+                # Go through each POI
+                for i, (poi_x, poi_y) in enumerate(self.state.poi_positions):
+                    # Convert from normalized field coordinates to camera coordinates
+                    # Create a quad from the camera points
+                    try:
+                        quad = Quad(self.state.camera1_points)
+                        # Convert from normalized field coordinates to camera coordinates
+                        camera_coords = quad.uv_to_point(poi_x, poi_y)
+
+                        if camera_coords:
+                            cam_x, cam_y = camera_coords
+                            # Scale to display coordinates
+                            screen_x = cursor_pos_x + (cam_x * scale_x)
+                            screen_y = cursor_pos_y + (cam_y * scale_y)
+
+                            # Draw a red X marker for each POI
+                            marker_size = 10.0
+                            mine_color = imgui.get_color_u32_rgba(1, 0, 0, 1)  # Red
+
+                            # Draw X
+                            draw_list.add_line(
+                                screen_x - marker_size, screen_y - marker_size,
+                                screen_x + marker_size, screen_y + marker_size,
+                                mine_color, 2.0
+                            )
+                            draw_list.add_line(
+                                screen_x - marker_size, screen_y + marker_size,
+                                screen_x + marker_size, screen_y - marker_size,
+                                mine_color, 2.0
+                            )
+
+                            # Draw POI number
+                            draw_list.add_text(
+                                screen_x + marker_size + 2,
+                                screen_y - marker_size - 2,
+                                mine_color,
+                                f"Mine {i+1}"
+                            )
+                    except Exception as e:
+                        # Silently fail if coordinate transformation doesn't work
+                        pass
+
+            # Draw crosshairs when hovering over the image
+            if imgui.is_item_hovered():
+                # Get mouse position
+                mouse_x, mouse_y = imgui.get_io().mouse_pos
+
+                # Only draw if mouse is inside the image area
+                if (cursor_pos_x <= mouse_x <= cursor_pos_x + display_width and
+                    cursor_pos_y <= mouse_y <= cursor_pos_y + display_height):
+
+                    # Draw vertical line
+                    draw_list = imgui.get_window_draw_list()
+                    draw_list.add_line(
+                        mouse_x, cursor_pos_y,
+                        mouse_x, cursor_pos_y + display_height,
+                        imgui.get_color_u32_rgba(1, 1, 0, 0.5), 1.0
+                    )
+
+                    # Draw horizontal line
+                    draw_list.add_line(
+                        cursor_pos_x, mouse_y,
+                        cursor_pos_x + display_width, mouse_y,
+                        imgui.get_color_u32_rgba(1, 1, 0, 0.5), 1.0
+                    )
+
+            # Check for mouse clicks inside the image
+            if imgui.is_item_hovered() and imgui.is_mouse_clicked(0):  # 0 = left mouse button
+                # Get mouse position
+                mouse_x, mouse_y = imgui.get_io().mouse_pos
+
+                # Calculate relative position within the image
+                rel_x = (mouse_x - cursor_pos_x) / display_width
+                rel_y = (mouse_y - cursor_pos_y) / display_height
+
+                # Convert to original video frame coordinates
+                frame_x = int(rel_x * self.source.width)
+                frame_y = int(rel_y * self.source.height)
+
+                # Print to console
+                print(f"Click at video position: x={frame_x}, y={frame_y} (relative: {rel_x:.3f}, {rel_y:.3f})")
+
+                # Check if we're waiting to set a camera point
+                if self.state.waiting_for_camera1_point >= 0:
+                    # Set the camera 1 point
+                    point_idx = self.state.waiting_for_camera1_point
+                    self.state.set_camera_point(1, point_idx, frame_x, frame_y)
+                    print(f"Set Camera 1 Point {point_idx+1} to ({frame_x}, {frame_y})")
+
+                elif self.state.waiting_for_camera2_point >= 0:
+                    # Set the camera 2 point
+                    point_idx = self.state.waiting_for_camera2_point
+                    self.state.set_camera_point(2, point_idx, frame_x, frame_y)
+                    print(f"Set Camera 2 Point {point_idx+1} to ({frame_x}, {frame_y})")
+
+        imgui.end()
+
+
 class FieldVisualization:
     """
     UI component for visualizing the field and POI positions.
@@ -129,7 +305,7 @@ class FieldVisualization:
             poi_distances = None
             if self.state.car_field_position is not None:
                 poi_distances = self.state.calculate_poi_distances()
-                
+
             # Draw POIs - swap x and y for rotation
             for i, (y, x) in enumerate(self.state.poi_positions):
                 # Calculate pixel position on the canvas with swapped coordinates
@@ -161,7 +337,7 @@ class FieldVisualization:
                     imgui.get_color_u32_rgba(1, 1, 0, 1),  # Yellow color
                     f"{i+1}"
                 )
-                
+
                 # Draw distance above the POI if available
                 if poi_distances is not None:
                     for poi_idx, distance in poi_distances:
@@ -176,10 +352,8 @@ class FieldVisualization:
 
             # Check for mouse clicks inside the field visualization
             if imgui.is_window_hovered() and imgui.is_window_focused() and imgui.is_mouse_clicked(0):
-                # Get mouse position
                 mouse_x, mouse_y = imgui.get_io().mouse_pos
 
-                # Debug print - show raw mouse coordinates
                 print(f"Mouse position: ({mouse_x}, {mouse_y})")
                 print(f"Canvas position: ({canvas_pos_x}, {canvas_pos_y}), size: {canvas_width}x{canvas_height}")
 
@@ -258,11 +432,13 @@ class ControlPanel:
             imgui.text("Fields")
 
             # Camera 1 points with display and Set button
-            imgui.text("Camera1 Points")
+            imgui.text("Camera1 Points:")
             for i in range(4):
                 # Display the current value as (x, y)
+                if i % 2:
+                    imgui.same_line()
                 x, y = self.state.camera1_points[i]
-                imgui.text(f"Point {i+1}: ({x}, {y})")
+                imgui.text(f"{i+1}: ({x}, {y})")
 
                 # Indicate if we're waiting for this point to be set
                 if self.state.waiting_for_camera1_point == i:
@@ -286,11 +462,15 @@ class ControlPanel:
                         print(f"Click on the image to set Camera 1 Point {i+1}")
 
             # Camera 2 points with display and Set button
-            imgui.text("Camera2 Points")
+            imgui.text("Camera2 Points:")
             for i in range(4):
                 # Display the current value as (x, y)
                 x, y = self.state.camera2_points[i]
-                imgui.text(f"Point {i+1}: ({x}, {y})")
+
+                if i % 2:
+                    imgui.same_line()
+
+                imgui.text(f"{i+1}: ({x}, {y})")
 
                 # Indicate if we're waiting for this point to be set
                 if self.state.waiting_for_camera2_point == i:
@@ -395,6 +575,29 @@ def create_glfw_window(window_name="Carmine", width=1920, height=1080):
     glfw.make_context_current(window)
     return window
 
+def process_camera_frame(source, model, app_state):
+    """
+    Reads a frame from the camera source and processes it with YOLO.
+
+    Args:
+        source: The video source to read from
+        model: The YOLO model for object detection
+        app_state: The application state for car highlighting
+
+    Returns:
+        Tuple of (processed_frame, car_detections)
+    """
+    # Get the raw frame
+    raw_frame = source.get_frame()
+
+    # Process with YOLO if needed
+    processed_frame, car_detections = sources.process_frame_with_yolo(raw_frame, model, highlighted_car=app_state.highlighted_car)
+
+    # Update texture with processed frame
+    sources.update_opengl_texture(source.get_texture_id(), processed_frame)
+
+    return processed_frame, car_detections
+
 def main():
     camera_list = []
     for camera_info in enumerate_cameras():
@@ -411,8 +614,8 @@ def main():
     # Initialize application state
     app_state = State(camera_list)
 
-    # Initialize the control panel with the state
-    global control_panel, field_viz
+    # Initialize the UI components with the state
+    global control_panel, field_viz, camera_display
     control_panel = ControlPanel(app_state)
     field_viz = FieldVisualization(app_state)
 
@@ -424,6 +627,9 @@ def main():
     except Exception as e:
         print("Couldn't open AI_angle_2.mov.")
         source_2 = None
+
+    camera_display = CameraDisplay(app_state, source_1)
+
 
     # Frame timing variables
     frame_time = 1.0/60.0  # Target 60 FPS
@@ -468,144 +674,21 @@ def main():
                     imgui.end_menu()
                 imgui.end_main_menu_bar()
 
-            # Get the raw frame
-            raw_frame = source_1.get_frame()
+            # Process camera frame (will be done even if the camera view is not displayed)
+            processed_frame, car_detections = process_camera_frame(source_1, model, app_state)
 
-            # Process with YOLO if needed
-            processed_frame, car_detections = sources.process_frame_with_yolo(raw_frame, model, highlighted_car=app_state.highlighted_car)
+            # Draw the camera view using the CameraDisplay class
+            camera_display.draw()
 
-            # Update texture with processed frame
-            sources.update_opengl_texture(source_1.get_texture_id(), processed_frame)
-
-            # Get texture ID for display
-            tex_id = source_1.get_texture_id()
-
-            # Set default window size for OpenCV Image window
-            default_width = 640
-            # Calculate the correct height based on the video's aspect ratio
-            aspect_ratio = source_1.width / source_1.height
-            default_height = default_width / aspect_ratio
-            imgui.set_next_window_size(default_width, default_height, imgui.FIRST_USE_EVER)
-
-            imgui.begin("OpenCV Image")
-            if tex_id:
-                # Get window position (needed for mouse position calculation)
-                window_pos_x, window_pos_y = imgui.get_window_position()
-                # Get cursor position (for content region position)
-                cursor_pos_x, cursor_pos_y = imgui.get_cursor_screen_pos()
-
-                # Get available width and height of the ImGui window content area
-                avail_width = imgui.get_content_region_available_width()
-
-                # Calculate aspect ratio to maintain proportions
-                aspect_ratio = source_1.width / source_1.height
-
-                # Set display dimensions based on available width and aspect ratio
-                display_width = avail_width
-                display_height = display_width / aspect_ratio
-
-                # Draw the image
-                imgui.image(tex_id, display_width, display_height)
-
-                # Draw camera quads if they have points defined
-                if True:  # Always draw, not just on hover
-                    draw_list = imgui.get_window_draw_list()
-
-                    # Function to draw quad for a camera
-                    def draw_camera_quad(points, color):
-                        # Only draw if we have valid points
-                        if all(isinstance(p, list) and len(p) == 2 for p in points):
-                            # Calculate scaling factors to map image coords to screen coords
-                            scale_x = display_width / source_1.width
-                            scale_y = display_height / source_1.height
-
-                            # Convert image coordinates to screen coordinates
-                            screen_points = []
-                            for x, y in points:
-                                screen_x = cursor_pos_x + (x * scale_x)
-                                screen_y = cursor_pos_y + (y * scale_y)
-                                screen_points.append((screen_x, screen_y))
-
-                            # Draw the quad as connected lines
-                            for i in range(4):
-                                next_i = (i + 1) % 4
-                                draw_list.add_line(
-                                    screen_points[i][0], screen_points[i][1],
-                                    screen_points[next_i][0], screen_points[next_i][1],
-                                    color, 2.0  # 2px thick
-                                )
-
-                    # Draw Camera 1 quad in bright green
-                    draw_camera_quad(app_state.camera1_points, imgui.get_color_u32_rgba(0, 1, 0, 0.8))
-
-                    # Draw Camera 2 quad in bright blue
-                    draw_camera_quad(app_state.camera2_points, imgui.get_color_u32_rgba(0, 0, 1, 0.8))
-
-                # Draw crosshairs when hovering over the image
-                if imgui.is_item_hovered():
-                    # Get mouse position
-                    mouse_x, mouse_y = imgui.get_io().mouse_pos
-
-                    # Only draw if mouse is inside the image area
-                    if (cursor_pos_x <= mouse_x <= cursor_pos_x + display_width and
-                        cursor_pos_y <= mouse_y <= cursor_pos_y + display_height):
-
-                        # Draw vertical line
-                        draw_list = imgui.get_window_draw_list()
-                        draw_list.add_line(
-                            mouse_x, cursor_pos_y,
-                            mouse_x, cursor_pos_y + display_height,
-                            imgui.get_color_u32_rgba(1, 1, 0, 0.5), 1.0
-                        )
-
-                        # Draw horizontal line
-                        draw_list.add_line(
-                            cursor_pos_x, mouse_y,
-                            cursor_pos_x + display_width, mouse_y,
-                            imgui.get_color_u32_rgba(1, 1, 0, 0.5), 1.0
-                        )
-
-                # Check for mouse clicks inside the image
-                if imgui.is_item_hovered() and imgui.is_mouse_clicked(0):  # 0 = left mouse button
-                    # Get mouse position
-                    mouse_x, mouse_y = imgui.get_io().mouse_pos
-
-                    # Calculate relative position within the image
-                    rel_x = (mouse_x - cursor_pos_x) / display_width
-                    rel_y = (mouse_y - cursor_pos_y) / display_height
-
-                    # Convert to original video frame coordinates
-                    frame_x = int(rel_x * source_1.width)
-                    frame_y = int(rel_y * source_1.height)
-
-                    # Print to console
-                    print(f"Click at video position: x={frame_x}, y={frame_y} (relative: {rel_x:.3f}, {rel_y:.3f})")
-
-                    # Check if we're waiting to set a camera point
-                    if app_state.waiting_for_camera1_point >= 0:
-                        # Set the camera 1 point
-                        point_idx = app_state.waiting_for_camera1_point
-                        app_state.set_camera_point(1, point_idx, frame_x, frame_y)
-                        print(f"Set Camera 1 Point {point_idx+1} to ({frame_x}, {frame_y})")
-
-                    elif app_state.waiting_for_camera2_point >= 0:
-                        # Set the camera 2 point
-                        point_idx = app_state.waiting_for_camera2_point
-                        app_state.set_camera_point(2, point_idx, frame_x, frame_y)
-                        print(f"Set Camera 2 Point {point_idx+1} to ({frame_x}, {frame_y})")
-
-
-                # Check if the user clicked on a car
-                for car in car_detections:
-                    x1, y1, x2, y2, conf, cls_id = car
-                    # Highlight the new car
-                    app_state.highlight_car(car)
-                    if app_state.car_field_position:
-                        print(f"Car field position: {app_state.car_field_position}")
-                    else:
-                        print("Could not calculate car field position")
-
-            imgui.end()
+            # Check if the user clicked on a car
+            for car in car_detections:
+                x1, y1, x2, y2, conf, cls_id = car
+                # Highlight the new car
+                app_state.highlight_car(car)
+                if app_state.car_field_position:
+                    print(f"Car field position: {app_state.car_field_position}")
+                else:
+                    print("Could not calculate car field position")
 
 
             # Draw the control panel and update its values
