@@ -8,167 +8,193 @@ import json
 import os
 from cv2_enumerate_cameras import enumerate_cameras
 from ultralytics import YOLO
-import PySimpleGUI as sg
 
 import sources
 from sources import create_opengl_texture, update_opengl_texture
-
-# Constants
-CONFIG_FILE = "carmine_config.json"
-
+from quad import Quad
+from state import State
 
 
-class State:
+class FieldVisualization:
     """
-    Class to hold application state, separate from UI rendering.
+    UI component for visualizing the field and POI positions.
     """
-    def __init__(self, camera_list):
-        self.camera_list = camera_list
+    def __init__(self, state):
+        self.state = state
 
-        # Camera selection
-        self.selected_camera1 = 0
-        self.selected_camera2 = 0
+    def draw(self):
+        """Draw a visualization of the field with POI positions"""
+        # Set default window size
+        # Rotate the field - height is now width, and width is now height
+        default_width = 400
+        field_aspect_ratio = self.state.field_size[1] / self.state.field_size[0]  # Height / Width (rotated)
+        default_height = int(default_width / field_aspect_ratio)
+        imgui.set_next_window_size(default_width, default_height, imgui.FIRST_USE_EVER)
 
-        # Camera points
-        self.camera1_points = [[0, 0] for _ in range(4)]  # 4 points (x,y) for camera 1
-        self.camera2_points = [[0, 0] for _ in range(4)]  # 4 points (x,y) for camera 2
+        if imgui.begin("Field Visualization"):
+            # Get drawing area info
+            draw_list = imgui.get_window_draw_list()
+            canvas_pos_x, canvas_pos_y = imgui.get_cursor_screen_pos()
+            canvas_width = imgui.get_content_region_available_width()
+            canvas_height = canvas_width / field_aspect_ratio
 
-        # Point selection state
-        self.waiting_for_camera1_point = -1  # Index of point we're waiting to set (-1 means not waiting)
-        self.waiting_for_camera2_point = -1  # Index of point we're waiting to set (-1 means not waiting)
+            # Draw field outline with thicker border
+            draw_list.add_rect(
+                canvas_pos_x, canvas_pos_y,
+                canvas_pos_x + canvas_width, canvas_pos_y + canvas_height,
+                imgui.get_color_u32_rgba(1, 1, 1, 1),  # White color
+                0, 2.0  # No rounding, 2px thickness
+            )
 
-        # Field dimensions (aspect ratio)
-        self.field_size = [160, 300]  # [width, height]
+            # Draw crosshairs when waiting for POI placement
+            if self.state.waiting_for_poi_point >= 0 and imgui.is_window_hovered():
+                # Get mouse position
+                mouse_x, mouse_y = imgui.get_io().mouse_pos
 
-        # Points of interest information
-        self.poi_info = ["" for _ in range(10)]  # Info for 10 POIs
+                # Draw crosshairs only if inside canvas
+                if (canvas_pos_x <= mouse_x <= canvas_pos_x + canvas_width and
+                    canvas_pos_y <= mouse_y <= canvas_pos_y + canvas_height):
 
-        # POI positions (normalized 0.0-1.0 coordinates on the field)
-        self.poi_positions = [
-            (0.2, 0.3),  # Example position for POI 1
-            (0.5, 0.5),  # Example position for POI 2
-            (0.8, 0.7),  # Example position for POI 3
-            (0.3, 0.8),  # Example position for POI 4
-            (0.7, 0.2),  # Example position for POI 5
-            (0.1, 0.9),  # Example position for POI 6
-            (0.9, 0.1),  # Example position for POI 7
-            (0.4, 0.6),  # Example position for POI 8
-            (0.6, 0.4),  # Example position for POI 9
-            (0.5, 0.8),  # Example position for POI 10
-        ]
+                    # Draw vertical line
+                    draw_list.add_line(
+                        mouse_x, canvas_pos_y,
+                        mouse_x, canvas_pos_y + canvas_height,
+                        imgui.get_color_u32_rgba(0, 1, 1, 0.7),  # Cyan color
+                        1.0
+                    )
 
-        # Load configuration if exists
-        self.load_config()
+                    # Draw horizontal line
+                    draw_list.add_line(
+                        canvas_pos_x, mouse_y,
+                        canvas_pos_x + canvas_width, mouse_y,
+                        imgui.get_color_u32_rgba(0, 1, 1, 0.7),  # Cyan color
+                        1.0
+                    )
 
-    def set_camera_point(self, camera_num, point_index, x, y):
-        """Set a camera point to the given coordinates"""
-        if camera_num == 1:
-            self.camera1_points[point_index] = [x, y]
-            self.waiting_for_camera1_point = -1  # Reset waiting state
-        elif camera_num == 2:
-            self.camera2_points[point_index] = [x, y]
-            self.waiting_for_camera2_point = -1  # Reset waiting state
+                    # Show preview of where the POI will be placed (to confirm the coordinate calculation)
+                    # Calculate relative position within the canvas (0-1)
+                    rel_x = (mouse_x - canvas_pos_x) / canvas_width
+                    rel_y = (mouse_y - canvas_pos_y) / canvas_height
 
-        # Save configuration after updating points
-        self.save_config()
+                    # For our POI storage format (which is rotated):
+                    # - X axis is vertical in our visualization (top to bottom)
+                    # - Y axis is horizontal in our visualization (right to left)
+                    norm_x = rel_y
+                    norm_y = 1.0 - rel_x
 
-    def get_camera1_id(self):
-        """Get the selected camera1 ID"""
-        if self.selected_camera1 < len(self.camera_list):
-            return self.camera_list[self.selected_camera1][0]
-        return None
+                    # Draw a small circle at the exact point that would be set
+                    draw_list.add_circle_filled(
+                        mouse_x, mouse_y,
+                        3.0,  # 3 pixel radius
+                        imgui.get_color_u32_rgba(1, 1, 0, 1),  # Yellow color
+                        12  # Number of segments (smoothness)
+                    )
 
-    def get_camera2_id(self):
-        """Get the selected camera2 ID"""
-        if self.selected_camera2 < len(self.camera_list):
-            return self.camera_list[self.selected_camera2][0]
-        return None
+            # Draw the highlighted car if available
+            if self.state.car_field_position is not None:
+                # Get car position
+                car_x, car_y = self.state.car_field_position
 
-    def set_poi_info(self, index, info):
-        """Set information for a specific POI"""
-        if 0 <= index < len(self.poi_info):
-            self.poi_info[index] = info
-            self.save_config()
+                # Convert to canvas coordinates with rotation
+                car_canvas_x = canvas_pos_x + ((1-car_y) * canvas_width)  # 1-y to flip
+                car_canvas_y = canvas_pos_y + (car_x * canvas_height)
 
-    def save_config(self):
-        """Save the current configuration to a JSON file"""
-        try:
-            config = {
-                'selected_camera1': self.selected_camera1,
-                'selected_camera2': self.selected_camera2,
-                'camera1_points': self.camera1_points,
-                'camera2_points': self.camera2_points,
-                'field_size': self.field_size,
-                'poi_info': self.poi_info,
-                'poi_positions': self.poi_positions
-            }
+                # Draw a larger symbol for the car (circle with dot in center)
+                car_marker_size = 7.0
+                car_color = imgui.get_color_u32_rgba(0, 1, 1, 1)  # Cyan color
 
-            with open(CONFIG_FILE, 'w') as f:
-                json.dump(config, f, indent=4)
-            print(f"Configuration saved to {CONFIG_FILE}")
-        except Exception as e:
-            print(f"Error saving configuration: {e}")
+                # Draw circle
+                draw_list.add_circle(
+                    car_canvas_x, car_canvas_y,
+                    car_marker_size,
+                    car_color, 12, 2.0  # 12 segments, 2px thickness
+                )
 
-    def load_config(self):
-        """Load configuration from a JSON file if it exists"""
-        try:
-            if not os.path.exists(CONFIG_FILE):
-                print(f"No configuration file found at {CONFIG_FILE}")
-                return
+                # Draw center dot
+                draw_list.add_circle_filled(
+                    car_canvas_x, car_canvas_y,
+                    2.0,  # Small dot
+                    car_color, 6  # 6 segments
+                )
 
-            with open(CONFIG_FILE, 'r') as f:
-                config = json.load(f)
+                # Draw "CAR" label
+                draw_list.add_text(
+                    car_canvas_x + car_marker_size + 2,
+                    car_canvas_y - car_marker_size - 2,
+                    car_color,
+                    "CAR"
+                )
 
-            # Load camera selection
-            if 'selected_camera1' in config:
-                self.selected_camera1 = config['selected_camera1']
-            if 'selected_camera2' in config:
-                self.selected_camera2 = config['selected_camera2']
+            # Draw POIs - swap x and y for rotation
+            for i, (y, x) in enumerate(self.state.poi_positions):
+                # Calculate pixel position on the canvas with swapped coordinates
+                # x becomes y and y becomes x to rotate 90 degrees
+                poi_x = canvas_pos_x + ((1-y) * canvas_width)  # 1-y to flip
+                poi_y = canvas_pos_y + (x * canvas_height)
 
-            # Load camera points
-            if 'camera1_points' in config:
-                self.camera1_points = config['camera1_points']
-            if 'camera2_points' in config:
-                self.camera2_points = config['camera2_points']
+                # Draw X marker
+                marker_size = 5.0
+                # Use different color for the POI we're currently setting
+                color = imgui.get_color_u32_rgba(1, 1, 0, 1) if i == self.state.waiting_for_poi_point else imgui.get_color_u32_rgba(1, 0, 0, 1)
 
-            # Load field size
-            if 'field_size' in config:
-                self.field_size = config['field_size']
+                # Draw X
+                draw_list.add_line(
+                    poi_x - marker_size, poi_y - marker_size,
+                    poi_x + marker_size, poi_y + marker_size,
+                    color, 2.0
+                )
+                draw_list.add_line(
+                    poi_x - marker_size, poi_y + marker_size,
+                    poi_x + marker_size, poi_y - marker_size,
+                    color, 2.0
+                )
 
-            # Load POI info
-            if 'poi_info' in config:
-                self.poi_info = config['poi_info']
+                # Draw POI number
+                draw_list.add_text(
+                    poi_x + marker_size + 2,
+                    poi_y - marker_size - 2,
+                    imgui.get_color_u32_rgba(1, 1, 0, 1),  # Yellow color
+                    f"{i+1}"
+                )
 
-            # Load POI positions
-            if 'poi_positions' in config:
-                self.poi_positions = config['poi_positions']
+            # Check for mouse clicks inside the field visualization
+            if imgui.is_window_hovered() and imgui.is_window_focused() and imgui.is_mouse_clicked(0):
+                # Get mouse position
+                mouse_x, mouse_y = imgui.get_io().mouse_pos
 
-            print(f"Configuration loaded from {CONFIG_FILE}")
-        except Exception as e:
-            print(f"Error loading configuration: {e}")
+                # Debug print - show raw mouse coordinates
+                print(f"Mouse position: ({mouse_x}, {mouse_y})")
+                print(f"Canvas position: ({canvas_pos_x}, {canvas_pos_y}), size: {canvas_width}x{canvas_height}")
 
-    def reset_config(self):
-        """Reset configuration to default values"""
-        # Reset camera points
-        self.camera1_points = [[0, 0] for _ in range(4)]
-        self.camera2_points = [[0, 0] for _ in range(4)]
+                # Check if click is inside the canvas
+                if (canvas_pos_x <= mouse_x <= canvas_pos_x + canvas_width and
+                    canvas_pos_y <= mouse_y <= canvas_pos_y + canvas_height):
 
-        # Reset field size
-        self.field_size = [160, 300]
+                    # Calculate relative position within the canvas (0-1)
+                    rel_x = (mouse_x - canvas_pos_x) / canvas_width
+                    rel_y = (mouse_y - canvas_pos_y) / canvas_height
 
-        # Reset POI info
-        self.poi_info = ["" for _ in range(10)]
+                    # For our POI storage format (which is rotated):
+                    # - X axis is vertical in our visualization (top to bottom)
+                    # - Y axis is horizontal in our visualization (right to left)
+                    norm_x = rel_y  # Y-coordinate in window becomes X in our POI system
+                    norm_y = 1.0 - rel_x  # X-coordinate in window (flipped) becomes Y in our POI system
 
-        # Reset POI positions to defaults
-        self.poi_positions = [
-            (0.2, 0.3), (0.5, 0.5), (0.8, 0.7), (0.3, 0.8), (0.7, 0.2),
-            (0.1, 0.9), (0.9, 0.1), (0.4, 0.6), (0.6, 0.4), (0.5, 0.8)
-        ]
+                    # Debug print - show normalized coordinates
+                    print(f"Relative position in window: ({rel_x:.2f}, {rel_y:.2f})")
+                    print(f"Normalized POI coordinates: ({norm_x:.2f}, {norm_y:.2f})")
 
+                    # Check if we're waiting to set a POI position
+                    if self.state.waiting_for_poi_point >= 0:
+                        # Set the POI position
+                        point_idx = self.state.waiting_for_poi_point
+                        self.state.set_poi_position(point_idx, norm_x, norm_y)
+                        print(f"Set POI {point_idx+1} to normalized position ({norm_x:.2f}, {norm_y:.2f})")
 
-        # Save the reset configuration
-        self.save_config()
-        print("Configuration reset to defaults")
+            # Add some space for the canvas
+            imgui.dummy(0, canvas_height + 10)
+
+            imgui.end()
 
 
 class ControlPanel:
@@ -271,9 +297,47 @@ class ControlPanel:
                         print(f"Click on the image to set Camera 2 Point {i+1}")
             imgui.separator()
 
-            imgui.text("PoI")
+            imgui.text("Points of Interest")
             for i in range(10):
-                imgui.text(f"Point {i+1}: {self.state.poi_info[i] or 'Information'}")
+                # Get position coordinates
+                x, y = self.state.poi_positions[i]
+
+                # Display the current value
+                imgui.text(f"Point {i+1}: ({x:.2f}, {y:.2f})")
+
+                # Indicate if we're waiting for this point to be set
+                if self.state.waiting_for_poi_point == i:
+                    imgui.same_line()
+                    imgui.text_colored("Waiting for click on field...", 1, 0.5, 0, 1)
+
+                # Add Set button
+                imgui.same_line()
+
+                # Change button text if this is the active point waiting for selection
+                button_text = "Cancel" if self.state.waiting_for_poi_point == i else "Set"
+                if imgui.button(f"{button_text}##poi_{i}"):
+                    if self.state.waiting_for_poi_point == i:
+                        # Cancel selection mode
+                        self.state.waiting_for_poi_point = -1
+                    else:
+                        # Enter selection mode for this point
+                        self.state.waiting_for_poi_point = i
+                        # Reset any other waiting state
+                        self.state.waiting_for_camera1_point = -1
+                        self.state.waiting_for_camera2_point = -1
+                        print(f"Click on the field visualization to set POI {i+1}")
+
+            imgui.separator()
+
+            imgui.text("Car Status")
+            if self.state.car_field_position:
+                car_x, car_y = self.state.car_field_position
+                imgui.text(f"Car: ({car_x:.2f}, {car_y:.2f})")
+                car_x_ft = car_x * 300
+                car_y_ft = car_y * 160
+                imgui.text(f"Car F: ({car_x_ft:.2f}, {car_y_ft:.2f})")
+            else:
+                imgui.text(f"Car: (unset)")
 
             imgui.separator()
 
@@ -299,68 +363,8 @@ class ControlPanel:
 
             imgui.end()
 
-    def draw_field_visualization(self):
-        """Draw a visualization of the field with POI positions"""
-        # Set default window size
-        # Rotate the field - height is now width, and width is now height
-        default_width = 400
-        field_aspect_ratio = self.state.field_size[1] / self.state.field_size[0]  # Height / Width (rotated)
-        default_height = int(default_width / field_aspect_ratio)
-        imgui.set_next_window_size(default_width, default_height, imgui.FIRST_USE_EVER)
 
-        if imgui.begin("Field Visualization"):
-            # Get drawing area info
-            draw_list = imgui.get_window_draw_list()
-            canvas_pos_x, canvas_pos_y = imgui.get_cursor_screen_pos()
-            canvas_width = imgui.get_content_region_available_width()
-            canvas_height = canvas_width / field_aspect_ratio
-
-            # Draw field outline with thicker border
-            draw_list.add_rect(
-                canvas_pos_x, canvas_pos_y,
-                canvas_pos_x + canvas_width, canvas_pos_y + canvas_height,
-                imgui.get_color_u32_rgba(1, 1, 1, 1),  # White color
-                0, 2.0  # No rounding, 2px thickness
-            )
-
-            # Draw POIs - swap x and y for rotation
-            for i, (y, x) in enumerate(self.state.poi_positions):
-                # Calculate pixel position on the canvas with swapped coordinates
-                # x becomes y and y becomes x to rotate 90 degrees
-                poi_x = canvas_pos_x + ((1-y) * canvas_width)  # 1-y to flip
-                poi_y = canvas_pos_y + (x * canvas_height)
-
-                # Draw X marker
-                marker_size = 5.0
-                color = imgui.get_color_u32_rgba(1, 0, 0, 1)  # Red color
-
-                # Draw X
-                draw_list.add_line(
-                    poi_x - marker_size, poi_y - marker_size,
-                    poi_x + marker_size, poi_y + marker_size,
-                    color, 2.0
-                )
-                draw_list.add_line(
-                    poi_x - marker_size, poi_y + marker_size,
-                    poi_x + marker_size, poi_y - marker_size,
-                    color, 2.0
-                )
-
-                # Draw POI number
-                draw_list.add_text(
-                    poi_x + marker_size + 2,
-                    poi_y - marker_size - 2,
-                    imgui.get_color_u32_rgba(1, 1, 0, 1),  # Yellow color
-                    f"{i+1}"
-                )
-
-            # Add some space for the canvas
-            imgui.dummy(0, canvas_height + 10)
-
-            imgui.end()
-
-
-def create_glfw_window(window_name="Carmine", width=1280, height=720):
+def create_glfw_window(window_name="Carmine", width=1920, height=1080):
     if not glfw.init():
         raise Exception("GLFW initialization failed")
     glfw.window_hint(glfw.CONTEXT_VERSION_MAJOR, 3)
@@ -373,31 +377,6 @@ def create_glfw_window(window_name="Carmine", width=1280, height=720):
         raise Exception("GLFW window creation failed")
     glfw.make_context_current(window)
     return window
-
-
-def ask_for_file():
-    layout = [
-        [sg.Text("Select a file:")],
-        [sg.Input(key="-FILE-"), sg.FileBrowse()],
-        [sg.Button("OK"), sg.Button("Cancel")],
-    ]
-
-    window = sg.Window("File Browser", layout)
-
-    while True:
-        event, values = window.read()
-        if event == sg.WIN_CLOSED or event == "Cancel":
-            break
-        if event == "OK":
-            file_path = values["-FILE-"]
-            if file_path:
-                print(f"Selected file: {file_path}")
-            else:
-                print("No file selected")
-            break
-
-    window.close()
-
 
 def main():
     camera_list = []
@@ -416,13 +395,18 @@ def main():
     app_state = State(camera_list)
 
     # Initialize the control panel with the state
-    global control_panel
+    global control_panel, field_viz
     control_panel = ControlPanel(app_state)
+    field_viz = FieldVisualization(app_state)
 
     # Initialize video sources
-    #source_1 = sources.VideoSource('./AI_angle_1.mov')
+    #source_1 = sources.VideoSource('..b/AI_angle_1.mov')
     source_1 = sources.BMSource()
-    source_2 = sources.VideoSource('./AI_angle_2.mov')
+    try:
+        source_2 = sources.VideoSource('../AI_angle_2.mov')
+    except Exception as e:
+        print("Couldn't open AI_angle_2.mov.")
+        source_2 = None
 
     # Frame timing variables
     frame_time = 1.0/60.0  # Target 60 FPS
@@ -471,7 +455,7 @@ def main():
             raw_frame = source_1.get_frame()
 
             # Process with YOLO if needed
-            processed_frame = sources.process_frame_with_yolo(raw_frame, model)
+            processed_frame, car_detections = sources.process_frame_with_yolo(raw_frame, model, highlighted_car=app_state.highlighted_car)
 
             # Update texture with processed frame
             sources.update_opengl_texture(source_1.get_texture_id(), processed_frame)
@@ -592,6 +576,18 @@ def main():
                         point_idx = app_state.waiting_for_camera2_point
                         app_state.set_camera_point(2, point_idx, frame_x, frame_y)
                         print(f"Set Camera 2 Point {point_idx+1} to ({frame_x}, {frame_y})")
+
+
+                # Check if the user clicked on a car
+                for car in car_detections:
+                    x1, y1, x2, y2, conf, cls_id = car
+                    # Highlight the new car
+                    app_state.highlight_car(car)
+                    if app_state.car_field_position:
+                        print(f"Car field position: {app_state.car_field_position}")
+                    else:
+                        print("Could not calculate car field position")
+
             imgui.end()
 
 
@@ -599,7 +595,7 @@ def main():
             control_panel.draw()
 
             # Draw the field visualization
-            control_panel.draw_field_visualization()
+            field_viz.draw()
 
 
             gl.glClearColor(0.1, 0.1, 0.1, 1)

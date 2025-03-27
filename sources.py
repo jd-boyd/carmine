@@ -47,7 +47,7 @@ def update_opengl_texture(texture_id, image):
     gl.glBindTexture(gl.GL_TEXTURE_2D, 0)
 
 
-def process_frame_with_yolo(frame, model, conf_threshold=0.25):
+def process_frame_with_yolo(frame, model, conf_threshold=0.25, highlighted_car=None):
     """
     Process a single frame with YOLOv8 to detect cars
 
@@ -55,9 +55,11 @@ def process_frame_with_yolo(frame, model, conf_threshold=0.25):
         frame: Input frame
         model: YOLOv8 model
         conf_threshold: Confidence threshold
+        highlighted_car: Optional [x1, y1, x2, y2, conf, cls_id] of a car to highlight
 
     Returns:
-        Processed frame with detections
+        Tuple of (processed frame with detections, list of car detections)
+        Car detections are in format [[x1, y1, x2, y2, conf, cls_id], ...]
     """
     # Scale frame to 640px width for YOLO processing (preserving aspect ratio)
     original_frame = frame.copy()  # Keep original for display
@@ -80,6 +82,9 @@ def process_frame_with_yolo(frame, model, conf_threshold=0.25):
     scale_x = original_frame.shape[1] / yolo_frame.shape[1]
     scale_y = original_frame.shape[0] / yolo_frame.shape[0]
 
+    # List to store car detections (for click detection later)
+    car_detections = []
+
     # Iterate through detections
     for det in results.boxes.data.cpu().numpy():
         x1, y1, x2, y2, conf, cls_id = det
@@ -97,8 +102,27 @@ def process_frame_with_yolo(frame, model, conf_threshold=0.25):
 
         # Check if the detected object is a vehicle
         if cls_id in vehicle_classes:
-            # Draw bounding box
-            cv2.rectangle(output_frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+            # Store detection data for later use
+            car_detections.append([x1, y1, x2, y2, conf, cls_id])
+            
+            # Check if this is the highlighted car
+            is_highlighted = False
+            if highlighted_car is not None:
+                hx1, hy1, hx2, hy2, _, _ = highlighted_car
+                # Check if this is approximately the same detection
+                overlap_threshold = 0.7  # Adjust if needed
+                # Check that the centers are close to each other
+                h_center_x = (hx1 + hx2) // 2
+                h_center_y = (hy1 + hy2) // 2
+                
+                # Check if centers are within a small distance
+                distance = np.sqrt((center_x - h_center_x)**2 + (center_y - h_center_y)**2)
+                if distance < 30:  # Adjust threshold as needed
+                    is_highlighted = True
+            
+            # Draw bounding box (yellow if highlighted, green otherwise)
+            box_color = (0, 255, 255) if is_highlighted else (0, 255, 0)
+            cv2.rectangle(output_frame, (x1, y1), (x2, y2), box_color, 2)
 
             # Display class name and confidence
             vehicle_type = class_names[cls_id]
@@ -108,17 +132,18 @@ def process_frame_with_yolo(frame, model, conf_threshold=0.25):
 
             # Calculate label position
             label_size, _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 2)
-            y1 = max(y1, label_size[1])
+            y1_label = max(y1, label_size[1])
 
             # Draw label background
-            cv2.rectangle(output_frame, (x1, y1 - label_size[1] - 5),
-                         (x1 + label_size[0], y1), (0, 255, 0), -1)
+            bg_color = (0, 255, 255) if is_highlighted else (0, 255, 0)
+            cv2.rectangle(output_frame, (x1, y1_label - label_size[1] - 5),
+                         (x1 + label_size[0], y1_label), bg_color, -1)
 
             # Draw label text
-            cv2.putText(output_frame, label, (x1, y1 - 5),
+            cv2.putText(output_frame, label, (x1, y1_label - 5),
                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 2)
 
-    return output_frame
+    return output_frame, car_detections
 
 
 class Source:

@@ -1,4 +1,5 @@
 import numpy as np
+import cv2
 
 class Quad:
     """
@@ -30,41 +31,11 @@ class Quad:
 
     def _calculate_transform_matrix(self):
         """Calculate the perspective transform matrix for the quad."""
-        # Map quad corners to UV coordinates
-        # UV coordinates for the quad corners in counter-clockwise order
 
-        # We're solving for matrix M in the equation:
-        # [u*w, v*w, w]^T = M * [x, y, 1]^T
+        # Calculate the homography matrix using cv2.findHomography
+        # RANSAC method helps eliminate outliers
+        self.H, _ = cv2.findHomography(self.src_points, self.dst_points, cv2.RANSAC, 5.0)
 
-        A = np.zeros((8, 8))
-        b = np.zeros(8)
-
-        for i in range(4):
-            x, y = self.src_points[i]
-            u, v = self.dst_points[i]
-
-            A[i*2, 0] = x
-            A[i*2, 1] = y
-            A[i*2, 2] = 1
-            A[i*2, 6] = -u * x
-            A[i*2, 7] = -u * y
-            b[i*2] = u
-
-            A[i*2+1, 3] = x
-            A[i*2+1, 4] = y
-            A[i*2+1, 5] = 1
-            A[i*2+1, 6] = -v * x
-            A[i*2+1, 7] = -v * y
-            b[i*2+1] = v
-
-        try:
-            # Solve the system of linear equations
-            m = np.linalg.solve(A, b)
-            M = np.vstack([m.reshape(8), [1]])
-            self.H = M.reshape(3, 3)
-        except np.linalg.LinAlgError:
-            # Handle case where the matrix is singular (e.g., collinear points)
-            self.H = None
 
     def point_to_uv(self, point_x, point_y):
         """
@@ -94,3 +65,39 @@ class Quad:
             return None
 
         return (u, v)
+
+    def uv_to_point(self, u, v):
+        """
+        Convert UV coordinates back to a point in image space.
+
+        Args:
+            u (float): U-coordinate in UV space (0 to 1)
+            v (float): V-coordinate in UV space (0 to 1)
+
+        Returns:
+            tuple: (x,y) coordinates of the point in image space
+                  or None if the transform is invalid or division by zero occurs
+        """
+        if self.H is None:
+            return None
+
+        # Invert the homography matrix
+        try:
+            H_inv = np.linalg.inv(self.H)
+        except np.linalg.LinAlgError:
+            # Matrix is not invertible
+            return None
+
+        # Apply inverse transform to the UV point
+        uv_point = np.array([u, v, 1])
+        result = H_inv @ uv_point
+
+        # Normalize by dividing by w
+        if result[2] != 0:
+            x = result[0] / result[2]
+            y = result[1] / result[2]
+        else:
+            # Handle division by zero edge case
+            return None
+
+        return (x, y)

@@ -173,6 +173,11 @@ cython_debug/
 # PyPI configuration file
 .pypirc
 
+# Project specific debug
+output
+frame_dump
+
+
 # emacs
 *~
 \#*
