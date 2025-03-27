@@ -17,6 +17,9 @@ class State:
         self.selected_camera1 = 0
         self.selected_camera2 = 0
 
+        self.camera1_points = []
+        self.camera2_points = []
+
         self.reset_config()
 
         # Point selection state
@@ -30,9 +33,32 @@ class State:
 
         self.c1_show_carbox = True
         self.c1_show_mines = True
+        self.c1_cursor = []
+
+        self.car_detections = []
 
         # Load configuration if exists
         self.load_config()
+
+        self.camera1_quad = Quad(self.camera1_points)
+        self.camera2_quad = Quad(self.camera2_points)
+
+
+    def set_c1_cursor(self, c):
+        self.c1_cursor = c
+
+    def set_car_detections(self, car_detections):
+        self.car_detections = car_detections
+        # Check if the user clicked on a car
+        for car in car_detections:
+            x1, y1, x2, y2, conf, cls_id = car
+            # Highlight the new car
+            self.highlight_car(car)
+            # if self.car_field_position:
+            #     print(f"Car field position: {self.car_field_position}")
+            # else:
+            #     print("Could not calculate car field position")
+
 
     def set_camera_point(self, camera_num, point_index, x, y):
         """Set a camera point to the given coordinates"""

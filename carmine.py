@@ -6,6 +6,7 @@ import OpenGL.GL as gl
 import numpy as np
 import json
 import os
+import sys
 from cv2_enumerate_cameras import enumerate_cameras
 from ultralytics import YOLO
 
@@ -19,9 +20,39 @@ class CameraDisplay:
     """
     UI component for displaying camera view with overlays.
     """
+
+    # The there are several relevent coordinate systems in this window.
+    # The is the screen space point in the window. (initially 640x360)
+    # There is the image space point in the window (probably 1920x1080)
+    # Third, there is the UV space (0,0) to (1,1), for items in the field box.
+    # Also drawing in the window is relative to the parent,so:
+    #   draw_point = point_in_window + window_position
+
     def __init__(self, state, source):
         self.state = state
         self.source = source
+
+        self.window_pos_x = 0
+        self.window_pos_y = 0
+
+        self.mouse_x = 0
+        self.mouse_y = 0
+
+
+    def get_mouse_in_window_space(self):
+        return [self.mouse_x-self.window_pos_x, self.mouse_y-self.window_pos_y]
+
+    def get_mouse_in_image_space(self):
+        return (int((self.mouse_x-self.window_pos_x)*self.scale),
+                int((self.mouse_y-self.window_pos_y)*self.scale))
+
+    def get_mouse_in_uv_space(self):
+        pt = self.get_mouse_in_image_space()
+        return self.state.camera1_quad.point_to_uv(pt[0], pt[1])
+
+
+    def uv_to_window_space(self):
+        pass
 
     def draw(self):
         """
@@ -33,8 +64,18 @@ class CameraDisplay:
         # Get texture ID for display
         tex_id = self.source.get_texture_id()
 
+        # Get window position (needed for mouse position calculation)
+        self.window_pos_x, self.window_pos_y = imgui.get_window_position()
+
+        # Get cursor position (for content region position)
+        cursor_pos_x, cursor_pos_y = imgui.get_cursor_screen_pos()
+
+        self.mouse_x, self.mouse_y = imgui.get_io().mouse_pos
+        self.state.set_c1_cursor([self.mouse_x-self.window_pos_x, self.mouse_y-self.window_pos_y])
+
         # Set default window size for OpenCV Image window
         default_width = 640
+        self.scale = 3.0
         # Calculate the correct height based on the video's aspect ratio
         aspect_ratio = self.source.width / self.source.height
         default_height = default_width / aspect_ratio
@@ -42,13 +83,11 @@ class CameraDisplay:
 
         imgui.begin("Camnera 1")
         if tex_id:
-            # Get window position (needed for mouse position calculation)
-            window_pos_x, window_pos_y = imgui.get_window_position()
-            # Get cursor position (for content region position)
-            cursor_pos_x, cursor_pos_y = imgui.get_cursor_screen_pos()
 
             # Get available width and height of the ImGui window content area
             avail_width = imgui.get_content_region_available_width()
+
+            self.scale = self.source.width / avail_width;
 
             # Calculate aspect ratio to maintain proportions
             # Set display dimensions based on available width and aspect ratio
@@ -59,6 +98,33 @@ class CameraDisplay:
             imgui.image(tex_id, display_width, display_height)
 
             draw_list = imgui.get_window_draw_list()
+
+            if len(self.state.car_detections) > 0:
+                hx1, hy1, hx2, hy2, _, _ = self.state.car_detections[0]
+                hx1 /= self.scale
+                hy1 /= self.scale
+                hx2 /= self.scale
+                hy2 /= self.scale
+                # Check if this is approximately the same detection
+                overlap_threshold = 0.7  # Adjust if needed
+                # Check that the centers are close to each other
+                h_center_x = (hx1 + hx2) // 2
+                h_center_y = (hy1 + hy2) // 2
+
+                # Draw field outline with thicker border
+                draw_list.add_rect(
+                    self.window_pos_x+hx1, self.window_pos_y+hy1,
+                    self.window_pos_x+hx2, self.window_pos_y+hy2,
+
+                    imgui.get_color_u32_rgba(0, 1, 1, 1),
+                    0, 2.0  # No rounding, 2px thickness
+                )
+
+            # Check if centers are within a small distance
+            # distance = np.sqrt((center_x - h_center_x)**2 + (center_y - h_center_y)**2)
+            # if distance < 30:  # Adjust threshold as needed
+            #     is_highlighted = True
+
 
             # Function to draw quad for a camera
             def draw_camera_quad(points, color):
@@ -98,7 +164,7 @@ class CameraDisplay:
                     # Convert from normalized field coordinates to camera coordinates
                     # Create a quad from the camera points
                     try:
-                        quad = Quad(self.state.camera1_points)
+                        quad = self.camera1_quad
                         # Convert from normalized field coordinates to camera coordinates
                         camera_coords = quad.uv_to_point(poi_x, poi_y)
 
@@ -392,8 +458,10 @@ class ControlPanel:
     """
     UI component for displaying and manipulating application state.
     """
-    def __init__(self, state):
+    def __init__(self, state, field_viz, camera_display):
         self.state = state
+        self.field_viz = field_viz
+        self.camera_display = camera_display
 
     def draw(self):
         """Draw the control panel UI and update state values"""
@@ -465,6 +533,17 @@ class ControlPanel:
             imgui.separator()
 
             imgui.text("Camera1 layers:")
+
+            imgui.text(f"Scale: {self.camera_display.scale}")
+
+            imgui.text("Cursor pos WS: ({}, {})".format(*self.camera_display.get_mouse_in_window_space()))
+
+            imgui.text("Cursor pos IS: ({}, {})".format(*self.camera_display.get_mouse_in_image_space()))
+
+            imgui.text("Cursor pos UV: ({}, {})".format(*self.camera_display.get_mouse_in_uv_space()))
+
+
+
 
             changed, checked = imgui.checkbox("Car box", self.state.c1_show_carbox)
             if changed:
@@ -595,6 +674,148 @@ def create_glfw_window(window_name="Carmine", width=1920, height=1080):
     glfw.make_context_current(window)
     return window
 
+
+def resize_with_aspect_ratio(image, width=None, height=None, inter=cv2.INTER_AREA):
+    """
+    Resize an image to a specified width or height while preserving the aspect ratio.
+
+    Args:
+        image: Input image
+        width: Target width (None to calculate from height)
+        height: Target height (None to calculate from width)
+        inter: Interpolation method
+
+    Returns:
+        Resized image
+    """
+    dim = None
+    h, w = image.shape[:2]
+
+    if width is None and height is None:
+        return image
+
+    if width is None:
+        r = height / float(h)
+        dim = (int(w * r), height)
+    else:
+        r = width / float(w)
+        dim = (width, int(h * r))
+
+    return cv2.resize(image, dim, interpolation=inter)
+
+
+def process_frame_with_yolo(frame, model, conf_threshold=0.25, highlighted_car=None):
+    """
+    Process a single frame with YOLOv8 to detect cars
+
+    Args:
+        frame: Input frame
+        model: YOLOv8 model
+        conf_threshold: Confidence threshold
+        highlighted_car: Optional [x1, y1, x2, y2, conf, cls_id] of a car to highlight
+
+    Returns:
+        Tuple of (processed frame with detections, list of car detections)
+        Car detections are in format [[x1, y1, x2, y2, conf, cls_id], ...]
+    """
+    # Scale frame to 640px width for YOLO processing (preserving aspect ratio)
+    original_frame = frame.copy()  # Keep original for display
+    target_width = 640
+    yolo_frame = resize_with_aspect_ratio(frame, width=target_width)
+
+    # YOLOv8 class names (COCO dataset)
+    class_names = model.names
+
+    # Car class ID in COCO dataset (2: car, 5: bus, 7: truck)
+    vehicle_classes = [2, 5, 7]
+
+    original_stdout = sys.stdout
+    original_stderr = sys.stderr
+    if sys.platform == "win32":
+        sys.stdout = open('NUL', 'w') # For Windows systems
+    else:
+        sys.stdout = open('/dev/null', 'w')  # For *nix systems
+    sys.stderr = sys.stdout
+
+    # Get model prediction on the resized frame
+    results = model.predict(yolo_frame, conf=conf_threshold)[0]
+
+    # Restore stdout
+    sys.stdout = original_stdout
+    sys.stderr = original_stderr
+
+    # Use the original frame for output (full resolution)
+    output_frame = original_frame.copy()
+
+    # Scale factor to map detections back to original frame
+    scale_x = original_frame.shape[1] / yolo_frame.shape[1]
+    scale_y = original_frame.shape[0] / yolo_frame.shape[0]
+
+    # List to store car detections (for click detection later)
+    car_detections = []
+
+    # Iterate through detections
+    for det in results.boxes.data.cpu().numpy():
+        x1, y1, x2, y2, conf, cls_id = det
+        cls_id = int(cls_id)
+
+        # Scale the coordinates back to the original image size
+        x1 = int(x1 * scale_x)
+        y1 = int(y1 * scale_y)
+        x2 = int(x2 * scale_x)
+        y2 = int(y2 * scale_y)
+
+        # Calculate center point of the bounding box
+        center_x = (x1 + x2) // 2
+        center_y = (y1 + y2) // 2
+
+        # Check if the detected object is a vehicle
+        if cls_id in vehicle_classes:
+            # Store detection data for later use
+            car_detections.append([x1, y1, x2, y2, conf, cls_id])
+
+            # # Check if this is the highlighted car
+            # is_highlighted = False
+            # if highlighted_car is not None:
+            #     hx1, hy1, hx2, hy2, _, _ = highlighted_car
+            #     # Check if this is approximately the same detection
+            #     overlap_threshold = 0.7  # Adjust if needed
+            #     # Check that the centers are close to each other
+            #     h_center_x = (hx1 + hx2) // 2
+            #     h_center_y = (hy1 + hy2) // 2
+
+            #     # Check if centers are within a small distance
+            #     distance = np.sqrt((center_x - h_center_x)**2 + (center_y - h_center_y)**2)
+            #     if distance < 30:  # Adjust threshold as needed
+            #         is_highlighted = True
+
+            # # Draw bounding box (yellow if highlighted, green otherwise)
+            # box_color = (0, 255, 255) if is_highlighted else (0, 255, 0)
+            # cv2.rectangle(output_frame, (x1, y1), (x2, y2), box_color, 2)
+
+            # Display class name and confidence
+            vehicle_type = class_names[cls_id]
+
+            # Prepare label with vehicle type and confidence
+            label = f"{vehicle_type}: {conf:.2f}"
+
+            # Calculate label position
+            label_size, _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 2)
+            y1_label = max(y1, label_size[1])
+
+            # Draw label background
+            # bg_color = (0, 255, 255) if is_highlighted else (0, 255, 0)
+            # cv2.rectangle(output_frame, (x1, y1_label - label_size[1] - 5),
+            #              (x1 + label_size[0], y1_label), bg_color, -1)
+
+            # # Draw label text
+            # cv2.putText(output_frame, label, (x1, y1_label - 5),
+            #            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 2)
+
+    return output_frame, car_detections
+
+
+
 def process_camera_frame(source, model, app_state):
     """
     Reads a frame from the camera source and processes it with YOLO.
@@ -611,7 +832,7 @@ def process_camera_frame(source, model, app_state):
     raw_frame = source.get_frame()
 
     # Process with YOLO if needed
-    processed_frame, car_detections = sources.process_frame_with_yolo(raw_frame, model, highlighted_car=app_state.highlighted_car)
+    processed_frame, car_detections = process_frame_with_yolo(raw_frame, model, highlighted_car=False) #app_state.highlighted_car)
 
     # Update texture with processed frame
     sources.update_opengl_texture(source.get_texture_id(), processed_frame)
@@ -625,7 +846,7 @@ def main():
         print(desc[1])
         camera_list.append(desc)
 
-    model=YOLO('yolov8s.pt')
+    model=YOLO('yolov9s.pt')
 
     window = create_glfw_window()
     imgui.create_context()
@@ -636,12 +857,12 @@ def main():
 
     # Initialize the UI components with the state
     global control_panel, field_viz, camera_display
-    control_panel = ControlPanel(app_state)
     field_viz = FieldVisualization(app_state)
 
     # Initialize video sources
-    #source_1 = sources.VideoSource('..b/AI_angle_1.mov')
-    source_1 = sources.BMSource()
+    #source_1 = sources.VideoSource('../AI_angles.mov')
+    source_1 = sources.AVFSource(2)
+    #source_1 = sources.BMSource()
     try:
         source_2 = sources.VideoSource('../AI_angle_2.mov')
     except Exception as e:
@@ -650,6 +871,7 @@ def main():
 
     camera_display = CameraDisplay(app_state, source_1)
 
+    control_panel = ControlPanel(app_state, field_viz, camera_display)
 
     # Frame timing variables
     frame_time = 1.0/60.0  # Target 60 FPS
@@ -696,19 +918,9 @@ def main():
 
             # Process camera frame (will be done even if the camera view is not displayed)
             processed_frame, car_detections = process_camera_frame(source_1, model, app_state)
-
+            app_state.set_car_detections(car_detections)
             # Draw the camera view using the CameraDisplay class
             camera_display.draw()
-
-            # Check if the user clicked on a car
-            for car in car_detections:
-                x1, y1, x2, y2, conf, cls_id = car
-                # Highlight the new car
-                app_state.highlight_car(car)
-                if app_state.car_field_position:
-                    print(f"Car field position: {app_state.car_field_position}")
-                else:
-                    print("Could not calculate car field position")
 
 
             # Draw the control panel and update its values
