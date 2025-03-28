@@ -29,23 +29,14 @@ def update_opengl_texture(texture_id, image):
 class Source:
     """Base class for all video sources"""
 
-    def get_frame(self):
-        """
-        Return the current raw frame without any processing
-
-        Returns:
-            numpy array: The current video frame
-        """
+    def __init__(self):
         raise NotImplementedError
+
+    def get_frame(self):
+        return self.frame
 
     def get_texture_id(self):
-        """
-        Return the OpenGL texture ID for the current frame
-
-        Returns:
-            int: OpenGL texture ID
-        """
-        raise NotImplementedError
+        return self.texture_id
 
     @property
     def width(self):
@@ -70,12 +61,6 @@ class StillSource(Source):
         self._width = self.frame.shape[1]
         self._height = self.frame.shape[0]
         self.texture_id = create_opengl_texture(self.frame)
-
-    def get_frame(self):
-        return self.frame
-
-    def get_texture_id(self):
-        return self.texture_id
 
     @property
     def width(self):
@@ -136,17 +121,6 @@ class VideoSource(Source):
 
         return self.frame
 
-    def get_texture_id(self):
-        """
-        Get the OpenGL texture ID for current frame
-
-        Returns:
-            int: OpenGL texture ID
-        """
-        # Make sure we have the latest frame
-        self.get_frame()
-        return self.texture_id
-
     @property
     def width(self):
         return self._width
@@ -161,146 +135,45 @@ class AVFSource(VideoSource):
         self.frame_counter = 0
         self.cap = cv2.VideoCapture(idx, cv2.CAP_AVFOUNDATION)
 
+
+        self.last_frame_time = cv2.getTickCount() / cv2.getTickFrequency()
+
         ret, frame = self.cap.read()
         if not ret or frame is None:
-            raise FileNotFoundError(f"Could not read video from {filename}")
+            raise FileNotFoundError(f"Could not read video source {idx}")
 
         self.frame = frame
         self._width = frame.shape[1]
         self._height = frame.shape[0]
         self.texture_id = create_opengl_texture(frame)
-        self.last_frame_time = cv2.getTickCount() / cv2.getTickFrequency()
 
 
+    def get_frame(self):
+        """
+        Get the next frame from video, respecting frame rate limits
 
+        Returns:
+            numpy array: Current video frame
+        """
+        current_time = cv2.getTickCount() / cv2.getTickFrequency()
 
-# class BMSource(Source):
-#     """Source that provides frames from a Blackmagic capture device"""
+        # Only grab new frames at ~30fps regardless of UI refresh rate
+        if (current_time - self.last_frame_time) > 0.033:
+            ret, frame = self.cap.read()
 
-#     def __init__(self, device_index=0, width=1920, height=1080, framerate=24.0, low_latency=True):
-#         """
-#         Initialize a Blackmagic capture device
+            # If reached end of video, loop back to beginning
+            # Update current frame
+            self.frame = frame
+            update_opengl_texture(self.texture_id, self.frame)
+            self.frame_counter += 1
+            self.last_frame_time = current_time
 
-#         Args:
-#             device_index: Index of the Blackmagic device (default: 0)
-#             width: Frame width (default: 1920)
-#             height: Frame height (default: 1080)
-#             framerate: Frame rate (default: 30.0)
-#             low_latency: Use low-latency mode (default: True)
-#         """
-#         self.device_index = device_index
-#         self._width = width
-#         self._height = height
-#         self.framerate = framerate
-#         self.low_latency = low_latency
-#         self.frame_count = 0
+        return self.frame
 
-#         # Try to initialize the capture device with the specified parameters
-#         try:
-#             self.cap = bmcapture.BMCapture(
-#                 self.device_index,
-#                 self._width,
-#                 self._height,
-#                 self.framerate,
-#                 self.low_latency
-#             )
-#             print(f"Initialized Blackmagic capture: {width}x{height} @ {framerate} fps")
-#         except Exception as e:
-#             # If initialization fails, try common framerates
-#             success = False
-#             for framerate in [24, 29.97, 24.0, 23.98, 25.0, 59.94, 60.0]:
-#                 try:
-#                     print(f"Trying to initialize with {width}x{height} @ {framerate} fps...")
-#                     self.cap = bmcapture.BMCapture(
-#                         self.device_index,
-#                         self._width,
-#                         self._height,
-#                         framerate,
-#                         self.low_latency
-#                     )
-#                     self.framerate = framerate
-#                     print(f"Success with framerate {framerate}!")
-#                     success = True
-#                     break
-#                 except Exception as e:
-#                     print(f"Failed with framerate {framerate}: {e}")
+    @property
+    def width(self):
+        return self._width
 
-#             # If high resolution fails, try 720p
-#             # if not success:
-#             #     try:
-#             #         self._width = 1280
-#             #         self._height = 720
-#             #         print(f"Trying to initialize with 1280x720 @ 59.94 fps...")
-#             #         self.cap = bmcapture.BMCapture(self.device_index, 1280, 720, 59.94, self.low_latency)
-#             #         self.framerate = 59.94
-#             #         print("Success with 1280x720 @ 59.94 fps!")
-#             #         success = True
-#             #     except Exception as e:
-#             #         print(f"Failed with 720p: {e}")
-
-#             if not success:
-#                 raise RuntimeError("Could not initialize any supported Blackmagic device mode")
-
-#         # Create an initial frame
-#         while not self.cap.update():
-#             time.sleep(0.1)
-# #            raise RuntimeError("Failed to get initial frame from Blackmagic device")
-
-#         # Get initial frame and create texture
-#         self.frame = self.cap.get_frame(format='rgb')  # Get frame in BGR format for OpenGL
-#         self.frame = cv2.cvtColor(self.frame, cv2.COLOR_RGB2BGR)
-#         self.texture_id = create_opengl_texture(self.frame)
-#         self.last_frame_time = time.time()
-
-#     def get_frame(self):
-#         """
-#         Get the next frame from the Blackmagic device
-
-#         Returns:
-#             numpy array: Current video frame
-#         """
-#         current_time = time.time()
-
-#         # Try to update frame at appropriate intervals based on framerate
-#         target_interval = 1.0 / self.framerate
-
-#         if (current_time - self.last_frame_time) >= target_interval:
-#             if self.cap.update():
-#                 self.frame = self.cap.get_frame(format='rgb')  # Get frame in BGR format for OpenGL
-
-#                 self.frame = cv2.cvtColor(self.frame, cv2.COLOR_RGB2BGR)
-#                 cv2.imwrite(f"frame_dump/frame_{self.frame_count:04d}.jpg", self.frame)
-#                 self.frame_count += 1
-#                 if self.frame_count % 10 == 0:
-#                     print(f"Captured {self.frame_count} frames")
-
-
-#                 update_opengl_texture(self.texture_id, self.frame)
-#                 self.last_frame_time = current_time
-
-#         return self.frame
-
-#     def get_texture_id(self):
-#         """
-#         Get the OpenGL texture ID for current frame
-
-#         Returns:
-#             int: OpenGL texture ID
-#         """
-#         self.get_frame()  # Make sure we have the latest frame
-#         return self.texture_id
-
-#     @property
-#     def width(self):
-#         return self._width
-
-#     @property
-#     def height(self):
-#         return self._height
-
-#     def close(self):
-#         """
-#         Close the capture device and release resources
-#         """
-#         if hasattr(self, 'cap'):
-#             self.cap.close()
+    @property
+    def height(self):
+        return self._height

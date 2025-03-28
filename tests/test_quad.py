@@ -76,6 +76,43 @@ class TestQuadClass(unittest.TestCase):
             result = quad.uv_to_point(*uv)
             pairAssert(result, quad_points[i])
 
+    def test_sanity_uv_field(self):
+        quad_points = [
+            (9, 0),
+            (0, 300),
+            (160, 300),
+            (160, 0)
+        ]
+        quad = Quad(quad_points)
+
+        def pairAssert(p1, p2):
+            self.assertAlmostEqual(p1[0], p2[0], delta=0.1)
+            self.assertAlmostEqual(p1[1], p2[1], delta=0.1)
+
+        # Test with a delta since floating point calculations might not be exact
+        for i, uv in enumerate([(0,0), (0,1), (1,1), (1,0)]):
+            result = quad.uv_to_point(*uv)
+            pairAssert(result, quad_points[i])
+
+
+    def test_sanity_field_uv(self):
+        quad_points = [
+            (9, 0),
+            (0, 300),
+            (160, 300),
+            (160, 0)
+        ]
+        quad = Quad(quad_points)
+
+        def pairAssert(p1, p2):
+            self.assertAlmostEqual(p1[0], p2[0], delta=0.1)
+            self.assertAlmostEqual(p1[1], p2[1], delta=0.1)
+
+        # Test with a delta since floating point calculations might not be exact
+        for i, uv in enumerate([(0,0), (0,1), (1,1), (1,0)]):
+            result = quad.point_to_uv(*quad_points[i])
+            pairAssert(result, uv[i])
+
 
     def test_uv_to_point_roundtrip(self):
         # Test with a simple square
