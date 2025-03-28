@@ -18,6 +18,10 @@ python 3.12 required (3.13 not yet supported)
 
 `uv venv -p python3.12 venv`
 
+ffmpeg is needed:
+
+`brew install ffmpeg` on macOS
+
 If you don't have that version of python, the above command will get it for you while making the virtual environment.
 
 `venv\Scripts\activate`

@@ -2,6 +2,8 @@ import OpenGL.GL as gl
 import sys
 import cv2
 import numpy as np
+import subprocess
+import re
 try:
     import bmcapture
 except ModuleNotFoundError:
@@ -129,12 +131,62 @@ class VideoSource(Source):
     def height(self):
         return self._height
 
+def enumerate_avf_sources():
+    """
+    Use ffmpeg to list available video capture devices on the system.
+
+    Returns:
+        list: List of tuples (device_index, device_name) for available video devices.
+    """
+    # Run ffmpeg command to list devices
+    try:
+        result = subprocess.run(
+            ["ffmpeg", "-list_devices", "true", "-f", "avfoundation", "-i", "dummy"],
+            capture_output=True,
+            text=True,
+            check=False  # Don't raise exception on non-zero exit code
+        )
+
+        # The command will have an error code since it doesn't actually open a device,
+        # but it will still output the device list to stderr
+        output = result.stderr
+
+        # Find the video devices section
+        video_section = False
+        video_devices = []
+
+        # Process each line of the output
+        for line in output.splitlines():
+            # Check if we've reached the video devices section
+            if "AVFoundation video devices:" in line:
+                video_section = True
+                continue
+            # Check if we've reached the audio devices section (end of video section)
+            elif "AVFoundation audio devices:" in line:
+                video_section = False
+                break
+
+            # If we're in the video section, parse the device information
+            if video_section:
+                # Match pattern like [0] Device Name
+                match = re.match(r'.*\[(\d+)\]\s+(.*)', line)
+                if match:
+                    device_index = int(match.group(1))
+                    device_name = match.group(2).strip()
+                    video_devices.append((device_index, device_name))
+
+        return video_devices
+
+    except Exception as e:
+        print(f"Error enumerating cameras: {e}")
+        return []
+
+
 class AVFSource(VideoSource):
 
     def __init__(self, idx):
         self.frame_counter = 0
         self.cap = cv2.VideoCapture(idx, cv2.CAP_AVFOUNDATION)
-
 
         self.last_frame_time = cv2.getTickCount() / cv2.getTickFrequency()
 

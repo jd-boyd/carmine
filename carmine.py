@@ -7,7 +7,6 @@ import numpy as np
 import json
 import os
 import sys
-from cv2_enumerate_cameras import enumerate_cameras
 from ultralytics import YOLO
 
 import sources
@@ -841,8 +840,8 @@ def process_camera_frame(source, model, app_state):
 
 def main():
     camera_list = []
-    for camera_info in enumerate_cameras():
-        desc = (camera_info.index, f'{camera_info.index}: {camera_info.name}')
+    for camera_info in sources.enumerate_avf_sources(): #enumerate_cameras():
+        desc = (camera_info.index, f'{camera_info[0]}: {camera_info[1]}')
         print(desc[1])
         camera_list.append(desc)
 
