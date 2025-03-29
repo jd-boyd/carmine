@@ -321,11 +321,11 @@ class FieldVisualization:
                     rel_x = (mouse_x - canvas_pos_x) / canvas_width
                     rel_y = (mouse_y - canvas_pos_y) / canvas_height
 
-                    # For our POI storage format (which is rotated):
-                    # - X axis is vertical in our visualization (top to bottom)
-                    # - Y axis is horizontal in our visualization (right to left)
-                    norm_x = rel_y
-                    norm_y = 1.0 - rel_x
+                    # Mapping coordinates with horizontal flipping:
+                    # - X axis is horizontal in our visualization (right to left, flipped)
+                    # - Y axis is vertical in our visualization (top to bottom)
+                    norm_x = 1.0 - rel_x  # Invert X-coordinate to match our flipped display
+                    norm_y = rel_y
 
                     # Draw a small circle at the exact point that would be set
                     draw_list.add_circle_filled(
@@ -359,9 +359,9 @@ class FieldVisualization:
 
                 car_x, car_y = car_pos
 
-                # Convert to canvas coordinates with rotation
-                car_canvas_x = canvas_pos_x + ((1-car_y) * canvas_width)  # 1-y to flip
-                car_canvas_y = canvas_pos_y + (car_x * canvas_height)
+                # Convert to canvas coordinates, flipping horizontally
+                car_canvas_x = canvas_pos_x + ((1-car_x) * canvas_width)  # 1-x to flip horizontally
+                car_canvas_y = canvas_pos_y + (car_y * canvas_height)
 
                 # Draw a larger symbol for the car (circle with dot in center)
                 car_marker_size = 7.0
@@ -400,12 +400,11 @@ class FieldVisualization:
                 if legacy_distances:
                     all_car_distances = [legacy_distances]
 
-            # Draw POIs - swap x and y for rotation
-            for i, (y, x) in enumerate(self.state.poi_positions):
-                # Calculate pixel position on the canvas with swapped coordinates
-                # x becomes y and y becomes x to rotate 90 degrees
-                poi_x = canvas_pos_x + ((1-y) * canvas_width)  # 1-y to flip
-                poi_y = canvas_pos_y + (x * canvas_height)
+            # Draw POIs with horizontal flipping
+            for i, (x, y) in enumerate(self.state.poi_positions):
+                # Calculate pixel position on the canvas, flipping horizontally
+                poi_x = canvas_pos_x + ((1-x) * canvas_width)  # 1-x to flip horizontally
+                poi_y = canvas_pos_y + (y * canvas_height)
 
                 # Draw X marker
                 marker_size = 5.0
@@ -470,11 +469,11 @@ class FieldVisualization:
                     rel_x = (mouse_x - canvas_pos_x) / canvas_width
                     rel_y = (mouse_y - canvas_pos_y) / canvas_height
 
-                    # For our POI storage format (which is rotated):
-                    # - X axis is vertical in our visualization (top to bottom)
-                    # - Y axis is horizontal in our visualization (right to left)
-                    norm_x = rel_y  # Y-coordinate in window becomes X in our POI system
-                    norm_y = 1.0 - rel_x  # X-coordinate in window (flipped) becomes Y in our POI system
+                    # Mapping coordinates with horizontal flipping:
+                    # - X axis is horizontal in our visualization (right to left, flipped)
+                    # - Y axis is vertical in our visualization (top to bottom)
+                    norm_x = 1.0 - rel_x  # Invert X-coordinate to match our flipped display
+                    norm_y = rel_y  # Y-coordinate in window stays as Y in our POI system
 
                     # Debug print - show normalized coordinates
                     print(f"Relative position in window: ({rel_x:.2f}, {rel_y:.2f})")
@@ -585,7 +584,9 @@ class ControlPanel:
 
             imgui.text("Cursor pos IS: ({}, {})".format(*self.camera_display.get_mouse_in_image_space()))
 
-            imgui.text("Cursor pos UV: ({}, {})".format(*self.camera_display.get_mouse_in_uv_space()))
+            muv = self.camera_display.get_mouse_in_uv_space()
+            muv = ["%0.4f" % x for x in muv]
+            imgui.text("Cursor pos UV: ({}, {})".format(*muv))
 
 
 
