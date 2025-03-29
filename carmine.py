@@ -44,8 +44,13 @@ class CameraDisplay:
         return [self.mouse_x-self.window_pos_x, self.mouse_y-self.window_pos_y]
 
     def get_mouse_in_image_space(self):
-        return (int((self.mouse_x-self.window_pos_x)*self.scale),
-                int((self.mouse_y-self.window_pos_y)*self.scale))
+        # Calculate mouse position in window space first
+        mouse_window_x = self.mouse_x - self.window_pos_x
+        mouse_window_y = self.mouse_y - self.window_pos_y
+        
+        # Scale to image space based on current zoom level
+        return (int(mouse_window_x * self.scale),
+                int(mouse_window_y * self.scale))
 
     def get_mouse_in_uv_space(self):
         pt = self.get_mouse_in_image_space()
@@ -335,6 +340,38 @@ class FieldVisualization:
                         12  # Number of segments (smoothness)
                     )
 
+            # Draw cursor position on field if available
+            if self.state.c1_cursor_field_position:
+                cursor_x, cursor_y = self.state.c1_cursor_field_position
+                
+                # Convert to canvas coordinates with horizontal flipping
+                cursor_canvas_x = canvas_pos_x + ((1-cursor_x) * canvas_width)
+                cursor_canvas_y = canvas_pos_y + (cursor_y * canvas_height)
+                
+                # Draw cursor as a plus symbol
+                cursor_marker_size = 8.0
+                cursor_color = imgui.get_color_u32_rgba(0, 1, 0.5, 1)  # Teal color
+                
+                # Draw plus symbol
+                draw_list.add_line(
+                    cursor_canvas_x - cursor_marker_size, cursor_canvas_y,
+                    cursor_canvas_x + cursor_marker_size, cursor_canvas_y,
+                    cursor_color, 1.5
+                )
+                draw_list.add_line(
+                    cursor_canvas_x, cursor_canvas_y - cursor_marker_size,
+                    cursor_canvas_x, cursor_canvas_y + cursor_marker_size,
+                    cursor_color, 1.5
+                )
+                
+                # Draw a label
+                draw_list.add_text(
+                    cursor_canvas_x + cursor_marker_size + 4,
+                    cursor_canvas_y - 8,
+                    cursor_color,
+                    "Cursor"
+                )
+            
             # Draw multiple cars if available
             car_positions = self.state.car_field_positions
 

@@ -39,6 +39,7 @@ class State:
         self.c1_show_carbox = True
         self.c1_show_mines = True
         self.c1_cursor = []
+        self.c1_cursor_field_position = None
 
         self.car_detections = []  # Raw detections from YOLO
 
@@ -51,6 +52,12 @@ class State:
 
     def set_c1_cursor(self, c):
         self.c1_cursor = c
+        
+        # Calculate field position from cursor coordinates if cursor is not empty
+        if c and len(c) == 2:
+            self.c1_cursor_field_position = self.camera_to_field_position(c[0], c[1])
+        else:
+            self.c1_cursor_field_position = None
 
     def set_car_detections(self, car_detections):
         self.car_detections = car_detections

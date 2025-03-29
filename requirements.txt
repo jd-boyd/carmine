@@ -1,7 +1,6 @@
 altgraph==0.17.4
 attrs==25.3.0
-bmcapture @ git+https://github.com/jd-boyd/bmcapture@main
-
+-e file:///Users/jdboyd/work/mrb/bmcapture
 cattrs==24.1.2
 certifi==2025.1.31
 charset-normalizer==3.4.1
