@@ -179,6 +179,9 @@ frame_dump
 carmine_config.json
 config.json
 
+# Ignore vision model files.
+*.pt
+
 
 # emacs
 *~

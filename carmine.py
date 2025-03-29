@@ -8,6 +8,7 @@ import json
 import os
 import sys
 from ultralytics import YOLO
+import supervision as sv
 
 import sources
 from sources import create_opengl_texture, update_opengl_texture
@@ -99,8 +100,8 @@ class CameraDisplay:
 
             draw_list = imgui.get_window_draw_list()
 
-            if len(self.state.car_detections) > 0:
-                hx1, hy1, hx2, hy2, _, _ = self.state.car_detections[0]
+            for car_det in self.state.car_detections:
+                hx1, hy1, hx2, hy2, _, _ = car_det #self.state.car_detections[0]
                 hx1 /= self.scale
                 hy1 /= self.scale
                 hx2 /= self.scale
@@ -111,10 +112,12 @@ class CameraDisplay:
                 h_center_x = (hx1 + hx2) // 2
                 h_center_y = (hy1 + hy2) // 2
 
+                x_nudge, y_nudge = 20, 20
+
                 # Draw field outline with thicker border
                 draw_list.add_rect(
-                    self.window_pos_x+hx1, self.window_pos_y+hy1,
-                    self.window_pos_x+hx2, self.window_pos_y+hy2,
+                    self.window_pos_x+hx1+x_nudge, self.window_pos_y+hy1+y_nudge,
+                    self.window_pos_x+hx2+x_nudge, self.window_pos_y+hy2+y_nudge,
 
                     imgui.get_color_u32_rgba(0, 1, 1, 1),
                     0, 2.0  # No rounding, 2px thickness
@@ -334,7 +337,7 @@ class FieldVisualization:
 
             # Draw multiple cars if available
             car_positions = self.state.car_field_positions
-            
+
             # Define colors for multiple cars - create a rainbow of colors
             car_colors = [
                 imgui.get_color_u32_rgba(0, 1, 1, 1),      # Cyan
@@ -348,36 +351,36 @@ class FieldVisualization:
                 imgui.get_color_u32_rgba(0.5, 1, 0.5, 1),  # Light green
                 imgui.get_color_u32_rgba(1, 0.5, 0.5, 1)   # Light red
             ]
-            
+
             # Draw each car with a different color
             for i, car_pos in enumerate(car_positions):
                 if i >= len(car_colors):
                     break  # Don't exceed the number of defined colors
-                    
+
                 car_x, car_y = car_pos
-                
+
                 # Convert to canvas coordinates with rotation
                 car_canvas_x = canvas_pos_x + ((1-car_y) * canvas_width)  # 1-y to flip
                 car_canvas_y = canvas_pos_y + (car_x * canvas_height)
-                
+
                 # Draw a larger symbol for the car (circle with dot in center)
                 car_marker_size = 7.0
                 car_color = car_colors[i]
-                
+
                 # Draw circle
                 draw_list.add_circle(
                     car_canvas_x, car_canvas_y,
                     car_marker_size,
                     car_color, 12, 2.0  # 12 segments, 2px thickness
                 )
-                
+
                 # Draw center dot
                 draw_list.add_circle_filled(
                     car_canvas_x, car_canvas_y,
                     2.0,  # Small dot
                     car_color, 6  # 6 segments
                 )
-                
+
                 # Draw car number label
                 draw_list.add_text(
                     car_canvas_x + car_marker_size + 2,
@@ -390,7 +393,7 @@ class FieldVisualization:
             all_car_distances = []
             if len(self.state.car_field_positions) > 0:
                 all_car_distances = self.state.calculate_all_car_poi_distances()
-            
+
             # Fall back to legacy behavior for backward compatibility
             elif self.state.car_field_position is not None:
                 legacy_distances = self.state.calculate_poi_distances()
@@ -433,12 +436,12 @@ class FieldVisualization:
                 if all_car_distances:
                     # Track vertical offset for multiple distances
                     y_offset = 15
-                    
+
                     # Look for this POI in each car's distances
                     for car_idx, car_distances in enumerate(all_car_distances):
                         # Use same colors as cars
                         car_color = car_colors[car_idx] if car_idx < len(car_colors) else imgui.get_color_u32_rgba(1, 1, 1, 1)
-                        
+
                         # Find this POI in the current car's distances
                         for poi_idx, distance in car_distances:
                             if poi_idx == i:
@@ -668,13 +671,13 @@ class ControlPanel:
             imgui.separator()
 
             imgui.text("Car Status")
-            
+
             # Get list of car positions
             car_positions = self.state.car_field_positions
-            
+
             # Display number of detected cars
             imgui.text(f"Detected cars: {len(car_positions)}")
-            
+
             # If we have cars, show their positions
             if car_positions:
                 # Create a collapsible section for car details
@@ -685,7 +688,7 @@ class ControlPanel:
                             # Convert to field units
                             car_x_ft = car_x * self.state.field_size[0]
                             car_y_ft = car_y * self.state.field_size[1]
-                            
+
                             # Use the same colors as in field visualization
                             if i < 10:
                                 r, g, b, a = 0, 0, 0, 0
@@ -699,7 +702,7 @@ class ControlPanel:
                                 elif i == 7: r, g, b = 0.5, 0.5, 1  # Light blue
                                 elif i == 8: r, g, b = 0.5, 1, 0.5  # Light green
                                 elif i == 9: r, g, b = 1, 0.5, 0.5  # Light red
-                                
+
                                 # Show colored information for each car
                                 imgui.text_colored(f"Car {i+1}:", r, g, b, 1)
                                 imgui.same_line()
@@ -777,8 +780,10 @@ def resize_with_aspect_ratio(image, width=None, height=None, inter=cv2.INTER_ARE
 
     return cv2.resize(image, dim, interpolation=inter)
 
+tracker = sv.ByteTrack()
+smoother = sv.DetectionsSmoother()
 
-def process_frame_with_yolo(frame, model, conf_threshold=0.25, highlighted_car=None):
+def process_frame_with_yolo(source, model, quad, conf_threshold=0.25, highlighted_car=None):
     """
     Process a single frame with YOLOv8 to detect cars
 
@@ -792,10 +797,18 @@ def process_frame_with_yolo(frame, model, conf_threshold=0.25, highlighted_car=N
         Tuple of (processed frame with detections, list of car detections)
         Car detections are in format [[x1, y1, x2, y2, conf, cls_id], ...]
     """
+
+    frame = source.get_frame()
+
+    # Skip YOLO processing if this is a PlaceholderSource
+    if isinstance(source, sources.PlaceholderSource):
+        return frame, [
+]
     # Scale frame to 640px width for YOLO processing (preserving aspect ratio)
     original_frame = frame.copy()  # Keep original for display
     target_width = 640
-    yolo_frame = resize_with_aspect_ratio(frame, width=target_width)
+    #yolo_frame = resize_with_aspect_ratio(frame, width=target_width)
+    yolo_frame = frame
 
     # YOLOv8 class names (COCO dataset)
     class_names = model.names
@@ -803,21 +816,22 @@ def process_frame_with_yolo(frame, model, conf_threshold=0.25, highlighted_car=N
     # Car class ID in COCO dataset (2: car, 5: bus, 7: truck)
     vehicle_classes = [2, 5, 7]
 
-    original_stdout = sys.stdout
-    original_stderr = sys.stderr
-    if sys.platform == "win32":
-        sys.stdout = open('NUL', 'w') # For Windows systems
-    else:
-        sys.stdout = open('/dev/null', 'w')  # For *nix systems
-    sys.stderr = sys.stdout
-
     # Get model prediction on the resized frame
-    results = model.predict(yolo_frame, conf=conf_threshold)[0]
-#    detections = sv.Detections.from_ultralytics(results)
+    results = model.predict(yolo_frame, imgsz=1920, conf=conf_threshold)[0]
 
-    # Restore stdout
-    sys.stdout = original_stdout
-    sys.stderr = original_stderr
+
+    polygon = np.array(quad)
+    polygon_zone = sv.PolygonZone(polygon=polygon)
+
+    #results = model(yolo_frame)[0]
+    detections = sv.Detections.from_ultralytics(results)
+    #is_detections_in_zone = polygon_zone.trigger(detections)
+
+    mask = polygon_zone.trigger(detections=detections)
+    detections = detections[mask]
+
+    detections = tracker.update_with_detections(detections)
+    detections = smoother.update_with_detections(detections)
 
     # Use the original frame for output (full resolution)
     output_frame = original_frame.copy()
@@ -830,8 +844,12 @@ def process_frame_with_yolo(frame, model, conf_threshold=0.25, highlighted_car=N
     car_detections = []
 
     # Iterate through detections
-    for det in results.boxes.data.cpu().numpy():
-        x1, y1, x2, y2, conf, cls_id = det
+#    for det in results.boxes.data.cpu().numpy():
+    for i in range(len(detections.confidence)):
+        #x1, y1, x2, y2, conf, cls_id = det
+        x1, y1, x2, y2 = detections.xyxy[i]
+        conf = detections.confidence[i]
+        cls_id = detections.class_id[i]
         cls_id = int(cls_id)
 
         # Scale the coordinates back to the original image size
@@ -889,34 +907,6 @@ def process_frame_with_yolo(frame, model, conf_threshold=0.25, highlighted_car=N
 
     return output_frame, car_detections
 
-
-
-def process_camera_frame(source, model, app_state):
-    """
-    Reads a frame from the camera source and processes it with YOLO.
-
-    Args:
-        source: The video source to read from
-        model: The YOLO model for object detection
-        app_state: The application state for car highlighting
-
-    Returns:
-        Tuple of (processed_frame, car_detections)
-    """
-    # Get the raw frame
-    raw_frame = source.get_frame()
-
-    # Skip YOLO processing if this is a PlaceholderSource
-    if isinstance(source, sources.PlaceholderSource):
-        return raw_frame, []
-
-    # Process with YOLO for real video sources
-    processed_frame, car_detections = process_frame_with_yolo(raw_frame, model, highlighted_car=False) #app_state.highlighted_car)
-
-    # Update texture with processed frame
-    sources.update_opengl_texture(source.get_texture_id(), processed_frame)
-
-    return processed_frame, car_detections
 
 def main():
     camera_list = []
@@ -1007,8 +997,14 @@ def main():
                     imgui.end_menu()
                 imgui.end_main_menu_bar()
 
-            # Process camera frame (will be done even if the camera view is not displayed)
-            processed_frame, car_detections = process_camera_frame(source_1, model, app_state)
+            processed_frame, car_detections = process_frame_with_yolo(source_1, model,
+                                                                      app_state.camera1_points,
+                                                                      highlighted_car=False) #app_state.highlighted_car)
+
+            # Update texture with processed frame
+            sources.update_opengl_texture(source_1.get_texture_id(), processed_frame)
+
+
             app_state.set_car_detections(car_detections)
             # Draw the camera view using the CameraDisplay class
             camera_display.draw()
