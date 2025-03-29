@@ -332,45 +332,70 @@ class FieldVisualization:
                         12  # Number of segments (smoothness)
                     )
 
-            # Draw the highlighted car if available
-            if self.state.car_field_position is not None:
-                # Get car position
-                car_x, car_y = self.state.car_field_position
-
+            # Draw multiple cars if available
+            car_positions = self.state.car_field_positions
+            
+            # Define colors for multiple cars - create a rainbow of colors
+            car_colors = [
+                imgui.get_color_u32_rgba(0, 1, 1, 1),      # Cyan
+                imgui.get_color_u32_rgba(1, 0.5, 0, 1),    # Orange
+                imgui.get_color_u32_rgba(0, 1, 0, 1),      # Green
+                imgui.get_color_u32_rgba(1, 0, 1, 1),      # Magenta
+                imgui.get_color_u32_rgba(1, 1, 0, 1),      # Yellow
+                imgui.get_color_u32_rgba(0, 0, 1, 1),      # Blue
+                imgui.get_color_u32_rgba(1, 0, 0, 1),      # Red
+                imgui.get_color_u32_rgba(0.5, 0.5, 1, 1),  # Light blue
+                imgui.get_color_u32_rgba(0.5, 1, 0.5, 1),  # Light green
+                imgui.get_color_u32_rgba(1, 0.5, 0.5, 1)   # Light red
+            ]
+            
+            # Draw each car with a different color
+            for i, car_pos in enumerate(car_positions):
+                if i >= len(car_colors):
+                    break  # Don't exceed the number of defined colors
+                    
+                car_x, car_y = car_pos
+                
                 # Convert to canvas coordinates with rotation
                 car_canvas_x = canvas_pos_x + ((1-car_y) * canvas_width)  # 1-y to flip
                 car_canvas_y = canvas_pos_y + (car_x * canvas_height)
-
+                
                 # Draw a larger symbol for the car (circle with dot in center)
                 car_marker_size = 7.0
-                car_color = imgui.get_color_u32_rgba(0, 1, 1, 1)  # Cyan color
-
+                car_color = car_colors[i]
+                
                 # Draw circle
                 draw_list.add_circle(
                     car_canvas_x, car_canvas_y,
                     car_marker_size,
                     car_color, 12, 2.0  # 12 segments, 2px thickness
                 )
-
+                
                 # Draw center dot
                 draw_list.add_circle_filled(
                     car_canvas_x, car_canvas_y,
                     2.0,  # Small dot
                     car_color, 6  # 6 segments
                 )
-
-                # Draw "CAR" label
+                
+                # Draw car number label
                 draw_list.add_text(
                     car_canvas_x + car_marker_size + 2,
                     car_canvas_y - car_marker_size - 2,
                     car_color,
-                    "CAR"
+                    f"CAR {i+1}"
                 )
 
-            # Get POI distances if car position is available
-            poi_distances = None
-            if self.state.car_field_position is not None:
-                poi_distances = self.state.calculate_poi_distances()
+            # Get POI distances for all cars
+            all_car_distances = []
+            if len(self.state.car_field_positions) > 0:
+                all_car_distances = self.state.calculate_all_car_poi_distances()
+            
+            # Fall back to legacy behavior for backward compatibility
+            elif self.state.car_field_position is not None:
+                legacy_distances = self.state.calculate_poi_distances()
+                if legacy_distances:
+                    all_car_distances = [legacy_distances]
 
             # Draw POIs - swap x and y for rotation
             for i, (y, x) in enumerate(self.state.poi_positions):
@@ -404,17 +429,28 @@ class FieldVisualization:
                     f"{i+1}"
                 )
 
-                # Draw distance above the POI if available
-                if poi_distances is not None:
-                    for poi_idx, distance in poi_distances:
-                        if poi_idx == i:
-                            draw_list.add_text(
-                                poi_x - marker_size - 10,
-                                poi_y - marker_size - 15,
-                                imgui.get_color_u32_rgba(0, 1, 1, 1),  # Cyan color
-                                f"{distance:.1f}"
-                            )
-                            break
+                # Draw distances from each car to this POI
+                if all_car_distances:
+                    # Track vertical offset for multiple distances
+                    y_offset = 15
+                    
+                    # Look for this POI in each car's distances
+                    for car_idx, car_distances in enumerate(all_car_distances):
+                        # Use same colors as cars
+                        car_color = car_colors[car_idx] if car_idx < len(car_colors) else imgui.get_color_u32_rgba(1, 1, 1, 1)
+                        
+                        # Find this POI in the current car's distances
+                        for poi_idx, distance in car_distances:
+                            if poi_idx == i:
+                                # Draw distance with car number
+                                draw_list.add_text(
+                                    poi_x - marker_size - 25,
+                                    poi_y - marker_size - y_offset,
+                                    car_color,
+                                    f"C{car_idx+1}: {distance:.1f}"
+                                )
+                                y_offset += 15  # Increment for next car
+                                break
 
             # Check for mouse clicks inside the field visualization
             if imgui.is_window_hovered() and imgui.is_window_focused() and imgui.is_mouse_clicked(0):
@@ -632,14 +668,44 @@ class ControlPanel:
             imgui.separator()
 
             imgui.text("Car Status")
-            if self.state.car_field_position:
-                car_x, car_y = self.state.car_field_position
-                imgui.text(f"Car: ({car_x:.2f}, {car_y:.2f})")
-                car_x_ft = car_x * 300
-                car_y_ft = car_y * 160
-                imgui.text(f"Car F: ({car_x_ft:.2f}, {car_y_ft:.2f})")
+            
+            # Get list of car positions
+            car_positions = self.state.car_field_positions
+            
+            # Display number of detected cars
+            imgui.text(f"Detected cars: {len(car_positions)}")
+            
+            # If we have cars, show their positions
+            if car_positions:
+                # Create a collapsible section for car details
+                if imgui.collapsing_header("Car Positions", flags=imgui.TREE_NODE_DEFAULT_OPEN):
+                    # Show each car's position
+                    for i, (car_x, car_y) in enumerate(car_positions):
+                        if i < 10:  # Limit to max cars
+                            # Convert to field units
+                            car_x_ft = car_x * self.state.field_size[0]
+                            car_y_ft = car_y * self.state.field_size[1]
+                            
+                            # Use the same colors as in field visualization
+                            if i < 10:
+                                r, g, b, a = 0, 0, 0, 0
+                                if i == 0: r, g, b = 0, 1, 1    # Cyan
+                                elif i == 1: r, g, b = 1, 0.5, 0  # Orange
+                                elif i == 2: r, g, b = 0, 1, 0    # Green
+                                elif i == 3: r, g, b = 1, 0, 1    # Magenta
+                                elif i == 4: r, g, b = 1, 1, 0    # Yellow
+                                elif i == 5: r, g, b = 0, 0, 1    # Blue
+                                elif i == 6: r, g, b = 1, 0, 0    # Red
+                                elif i == 7: r, g, b = 0.5, 0.5, 1  # Light blue
+                                elif i == 8: r, g, b = 0.5, 1, 0.5  # Light green
+                                elif i == 9: r, g, b = 1, 0.5, 0.5  # Light red
+                                
+                                # Show colored information for each car
+                                imgui.text_colored(f"Car {i+1}:", r, g, b, 1)
+                                imgui.same_line()
+                                imgui.text(f"({car_x:.2f}, {car_y:.2f}) → ({car_x_ft:.1f}, {car_y_ft:.1f}) units")
             else:
-                imgui.text(f"Car: (unset)")
+                imgui.text("No cars detected")
 
             imgui.separator()
 
@@ -747,6 +813,7 @@ def process_frame_with_yolo(frame, model, conf_threshold=0.25, highlighted_car=N
 
     # Get model prediction on the resized frame
     results = model.predict(yolo_frame, conf=conf_threshold)[0]
+#    detections = sv.Detections.from_ultralytics(results)
 
     # Restore stdout
     sys.stdout = original_stdout
@@ -858,7 +925,10 @@ def main():
         print(f'{camera_info[0]}: {camera_info[1]}')
         camera_list.append(camera_info)
 
-    model=YOLO('yolov9s.pt')
+    #model=YOLO('yolov9s.pt')
+    #model=YOLO('yolov8s.pt')
+    #model=YOLO('yolo11n.pt')
+    model=YOLO('yolov5nu.pt')
 
     window = create_glfw_window()
     imgui.create_context()

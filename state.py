@@ -28,15 +28,19 @@ class State:
         self.waiting_for_camera2_point = -1  # Index of point we're waiting to set (-1 means not waiting)
         self.waiting_for_poi_point = -1      # Index of POI we're waiting to set (-1 means not waiting)
 
-        # Highlighted car tracking
-        self.highlighted_car = None  # Will store [x, y, width, height, confidence] of highlighted car in video coordinates
-        self.car_field_position = None  # Will store (x, y) of the car position on the field (normalized coordinates)
-
+        # Car tracking - extended to handle multiple cars
+        self.highlighted_cars = []  # Will store list of [x, y, width, height, confidence, class_id] of highlighted cars
+        self.car_field_positions = []  # Will store list of (x, y) positions of cars on the field
+        # Keep these for backward compatibility
+        self.highlighted_car = None
+        self.car_field_position = None
+        
+        self.max_cars = 10  # Maximum number of cars to track
         self.c1_show_carbox = True
         self.c1_show_mines = True
         self.c1_cursor = []
 
-        self.car_detections = []
+        self.car_detections = []  # Raw detections from YOLO
 
         # Load configuration if exists
         self.load_config()
@@ -50,15 +54,23 @@ class State:
 
     def set_car_detections(self, car_detections):
         self.car_detections = car_detections
-        # Check if the user clicked on a car
-        for car in car_detections:
-            x1, y1, x2, y2, conf, cls_id = car
-            # Highlight the new car
+        
+        # Clear previous highlighted cars
+        self.highlighted_cars = []
+        self.car_field_positions = []
+        
+        # Process up to max_cars detections
+        cars_to_process = min(len(car_detections), self.max_cars)
+        
+        # Process each car in the detections
+        for i in range(cars_to_process):
+            car = car_detections[i]
             self.highlight_car(car)
-            # if self.car_field_position:
-            #     print(f"Car field position: {self.car_field_position}")
-            # else:
-            #     print("Could not calculate car field position")
+            
+        # For backward compatibility - set the first car as the primary highlighted car
+        if len(self.highlighted_cars) > 0:
+            self.highlighted_car = self.highlighted_cars[0]
+            self.car_field_position = self.car_field_positions[0] if len(self.car_field_positions) > 0 else None
 
 
     def set_camera_point(self, camera_num, point_index, x, y):
@@ -132,25 +144,28 @@ class State:
     def highlight_car(self, car_detection):
         """
         Highlight a car and calculate its position on the field
+        Now handles multiple cars by appending to a list
 
         Args:
             car_detection: [x1, y1, x2, y2, conf, cls_id] car detection
         """
         if car_detection is None:
-            self.highlighted_car = None
-            self.car_field_position = None
             return
 
-        # Store the car detection
-        self.highlighted_car = car_detection
+        # Add car detection to the list of highlighted cars
+        self.highlighted_cars.append(car_detection)
 
         # Calculate the center of the car
-        x1, y1, x2, y2, _, _ = car_detection
+        x1, y1, x2, y2, conf, cls_id = car_detection
         center_x = (x1 + x2) // 2
         center_y = (y1 + y2) // 2
 
         # Convert to field position
-        self.car_field_position = self.camera_to_field_position(center_x, center_y)
+        field_position = self.camera_to_field_position(center_x, center_y)
+        
+        # Add field position to the list
+        if field_position is not None:
+            self.car_field_positions.append(field_position)
 
     def save_config(self):
         """Save the current configuration to the primary JSON file"""
@@ -229,19 +244,27 @@ class State:
             (0.1, 0.9), (0.9, 0.1), (0.4, 0.6), (0.6, 0.4), (0.5, 0.8)
         ]
 
-    def calculate_poi_distances(self):
+    def calculate_poi_distances(self, car_index=0):
         """
-        Calculate distances between the car and each point of interest.
+        Calculate distances between a car and each point of interest.
+
+        Args:
+            car_index: Index of the car to calculate distances for (defaults to first car)
 
         Returns:
             list: List of (poi_index, distance) tuples sorted by distance,
                   or None if car position is not available
         """
-        if self.car_field_position is None:
+        # For backward compatibility
+        if car_index == 0 and self.car_field_position is not None:
+            car_pos = self.car_field_position
+        elif car_index < len(self.car_field_positions):
+            car_pos = self.car_field_positions[car_index]
+        else:
             return None
 
-        car_x, car_y = self.car_field_position
         distances = []
+        car_x, car_y = car_pos
 
         for i, (poi_x, poi_y) in enumerate(self.poi_positions):
             # Convert normalized coordinates to actual field dimensions
@@ -255,4 +278,23 @@ class State:
             distances.append((i, distance))
 
         # Sort by distance
+        distances.sort(key=lambda x: x[1])
         return distances
+        
+    def calculate_all_car_poi_distances(self):
+        """
+        Calculate distances between all cars and each point of interest.
+
+        Returns:
+            list: List of car distances, where each entry is a list of (poi_index, distance) tuples
+                  for that car, sorted by distance
+        """
+        all_distances = []
+        
+        # Use car_field_positions list for all cars
+        for i in range(len(self.car_field_positions)):
+            car_distances = self.calculate_poi_distances(i)
+            if car_distances:
+                all_distances.append(car_distances)
+                
+        return all_distances
