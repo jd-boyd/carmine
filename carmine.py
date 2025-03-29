@@ -692,6 +692,62 @@ class ControlPanel:
                 imgui.end_tooltip()
 
             imgui.separator()
+            # Config Management
+            imgui.text("Configuration")
+            if imgui.button("Reload Config"):
+                self.state.load_config()
+                print("Configuration reloaded from file")
+
+            imgui.same_line()
+            if imgui.button("Config 1"):
+                try:
+                    # Copy camera_1.json to config.json
+                    with open("config_1.json", 'r') as src_file:
+                        config_data = src_file.read()
+                    with open("config.json", 'w') as dest_file:
+                        dest_file.write(config_data)
+                    # Reload the config
+                    self.state.load_config()
+                    print("Configuration 1 loaded successfully")
+                except Exception as e:
+                    print(f"Error loading configuration 1: {e}")
+
+            imgui.same_line()
+            if imgui.button("Config 2"):
+                try:
+                    # Copy camera_2.json to config.json
+                    with open("config_2.json", 'r') as src_file:
+                        config_data = src_file.read()
+                    with open("config.json", 'w') as dest_file:
+                        dest_file.write(config_data)
+                    # Reload the config
+                    self.state.load_config()
+                    print("Configuration 2 loaded successfully")
+                except Exception as e:
+                    print(f"Error loading configuration 2: {e}")
+
+            imgui.same_line()
+            if imgui.button("Reset to Defaults"):
+                if imgui.begin_popup_modal("Confirm Reset", True):
+                    imgui.text("Are you sure you want to reset all configuration to defaults?")
+                    imgui.text("This action cannot be undone.")
+                    imgui.separator()
+
+                    if imgui.button("Yes", 120, 0):
+                        self.state.reset_config()
+                        imgui.close_current_popup()
+
+                    imgui.same_line()
+                    if imgui.button("No", 120, 0):
+                        imgui.close_current_popup()
+
+                    imgui.end_popup()
+                else:
+                    imgui.open_popup("Confirm Reset")
+
+
+
+            imgui.separator()
 
 
             imgui.text("Field Size")
@@ -852,60 +908,6 @@ class ControlPanel:
             else:
                 imgui.text("No cars detected")
 
-            imgui.separator()
-
-            # Config Management
-            imgui.text("Configuration")
-            if imgui.button("Reload Config"):
-                self.state.load_config()
-                print("Configuration reloaded from file")
-
-            imgui.same_line()
-            if imgui.button("Config 1"):
-                try:
-                    # Copy camera_1.json to config.json
-                    with open("config_1.json", 'r') as src_file:
-                        config_data = src_file.read()
-                    with open("config.json", 'w') as dest_file:
-                        dest_file.write(config_data)
-                    # Reload the config
-                    self.state.load_config()
-                    print("Configuration 1 loaded successfully")
-                except Exception as e:
-                    print(f"Error loading configuration 1: {e}")
-
-            imgui.same_line()
-            if imgui.button("Config 2"):
-                try:
-                    # Copy camera_2.json to config.json
-                    with open("config_2.json", 'r') as src_file:
-                        config_data = src_file.read()
-                    with open("config.json", 'w') as dest_file:
-                        dest_file.write(config_data)
-                    # Reload the config
-                    self.state.load_config()
-                    print("Configuration 2 loaded successfully")
-                except Exception as e:
-                    print(f"Error loading configuration 2: {e}")
-
-            imgui.same_line()
-            if imgui.button("Reset to Defaults"):
-                if imgui.begin_popup_modal("Confirm Reset", True):
-                    imgui.text("Are you sure you want to reset all configuration to defaults?")
-                    imgui.text("This action cannot be undone.")
-                    imgui.separator()
-
-                    if imgui.button("Yes", 120, 0):
-                        self.state.reset_config()
-                        imgui.close_current_popup()
-
-                    imgui.same_line()
-                    if imgui.button("No", 120, 0):
-                        imgui.close_current_popup()
-
-                    imgui.end_popup()
-                else:
-                    imgui.open_popup("Confirm Reset")
 
             imgui.end()
 
