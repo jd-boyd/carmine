@@ -1,3 +1,4 @@
+import time
 import imgui
 from imgui.integrations.glfw import GlfwRenderer
 import glfw
@@ -25,7 +26,7 @@ class CameraDisplay:
     # The there are several relevent coordinate systems in this window.
     # The is the screen space point in the window. (initially 640x360)
     # There is the image space point in the window (probably 1920x1080)
-    # There is field space, which maps the field box to a known size (initially 160x300)
+    # There is field space, which maps the field box to a known size (initially 100x300)
     # Also drawing in the window is relative to the parent,so:
     #   draw_point = point_in_window + window_position
 
@@ -147,24 +148,24 @@ class CameraDisplay:
 
                             # Determine mine color based on nearest car distance
                             marker_size = 10.0
-                            
+
                             # Default color (red) if no cars or can't calculate distance
                             r, g, b = 1.0, 0.0, 0.0  # Default to red
-                            
+
                             # Try to find the minimum distance from any car to this POI
                             min_distance = float('inf')
-                            
+
                             # Calculate distances if we have cars
                             if self.state.car_field_positions:
                                 # Get POI position
                                 poi_x, poi_y = self.state.poi_positions[i]
-                                
+
                                 # Check each car's distance to this POI
                                 for car_x, car_y in self.state.car_field_positions:
                                     # Calculate Euclidean distance
                                     dist = ((car_x - poi_x)**2 + (car_y - poi_y)**2)**0.5
                                     min_distance = min(min_distance, dist)
-                            
+
                             # Set color based on POI ranges (use first 3 values if available)
                             # Green: beyond the safe distance
                             # Yellow: in caution zone
@@ -173,14 +174,14 @@ class CameraDisplay:
                                 # Get thresholds from poi_ranges
                                 if len(self.state.poi_ranges) >= 3:
                                     safe_distance = self.state.poi_ranges[0]
-                                    caution_distance = self.state.poi_ranges[1] 
+                                    caution_distance = self.state.poi_ranges[1]
                                     danger_distance = self.state.poi_ranges[2]
                                 else:
                                     # Default values if not enough ranges defined
                                     safe_distance = 45
                                     caution_distance = 15
                                     danger_distance = 3
-                                
+
                                 # Set color based on distance thresholds
                                 if min_distance > safe_distance:
                                     # Green - safe
@@ -194,11 +195,11 @@ class CameraDisplay:
                                 else:
                                     # Red - danger
                                     r, g, b = 1.0, 0.0, 0.0
-                            
+
                             # Create colors with the determined RGB values
                             mine_color = imgui.get_color_u32_rgba(r, g, b, 1.0)
                             fill_color = imgui.get_color_u32_rgba(r, g, b, 0.5)  # Semi-transparent
-                            
+
                             # Draw triangle (pointing upward)
                             draw_list.add_triangle(
                                 screen_x, screen_y - marker_size,               # top vertex
@@ -474,15 +475,15 @@ class FieldVisualization:
 
                 # Determine marker color based on car proximity
                 marker_size = 5.0
-                
+
                 # Default color - red or yellow if waiting for POI point
                 r, g, b = 1.0, 1.0 if i == self.state.waiting_for_poi_point else 0.0, 0.0
-                
+
                 # If we're not setting this POI, use distance-based coloring
                 if i != self.state.waiting_for_poi_point:
                     # Try to find the minimum distance from any car to this POI
                     min_distance = float('inf')
-                    
+
                     # Calculate distances if we have cars
                     if self.state.car_field_positions:
                         # Check each car's distance to this POI
@@ -490,20 +491,20 @@ class FieldVisualization:
                             # Calculate Euclidean distance
                             dist = ((car_x - field_x)**2 + (car_y - field_y)**2)**0.5
                             min_distance = min(min_distance, dist)
-                    
+
                     # Set color based on POI ranges thresholds
                     if min_distance != float('inf'):
                         # Get thresholds from poi_ranges
                         if len(self.state.poi_ranges) >= 3:
                             safe_distance = self.state.poi_ranges[0]
-                            caution_distance = self.state.poi_ranges[1] 
+                            caution_distance = self.state.poi_ranges[1]
                             danger_distance = self.state.poi_ranges[2]
                         else:
                             # Default values if not enough ranges defined
                             safe_distance = 45
                             caution_distance = 15
                             danger_distance = 3
-                        
+
                         # Set color based on distance thresholds (same logic as in camera view)
                         if min_distance > safe_distance:
                             # Green - safe
@@ -517,7 +518,7 @@ class FieldVisualization:
                         else:
                             # Red - danger
                             r, g, b = 1.0, 0.0, 0.0
-                
+
                 # Create colors with the determined RGB values
                 color = imgui.get_color_u32_rgba(r, g, b, 1.0)
                 fill_color = imgui.get_color_u32_rgba(r, g, b, 0.5)  # Semi-transparent
@@ -887,7 +888,7 @@ def resize_with_aspect_ratio(image, width=None, height=None, inter=cv2.INTER_ARE
 tracker = sv.ByteTrack()
 smoother = sv.DetectionsSmoother()
 mask_annotator = sv.MaskAnnotator()
-
+old_gray = None
 
 def process_frame_with_yolo(source, model, quad, conf_threshold=0.25, highlighted_car=None):
     """
@@ -904,34 +905,57 @@ def process_frame_with_yolo(source, model, quad, conf_threshold=0.25, highlighte
         Tuple of (processed frame with detections, list of car detections)
         Car detections are in format [[x1, y1, x2, y2, conf, cls_id], ...]
     """
-
+    p_start_time = time.time()
     # Use the frame provided by the caller
     frame = source.get_frame()
 
     # Skip YOLO processing if this is a PlaceholderSource
     if isinstance(source, sources.PlaceholderSource):
-        return frame, [
-]
-    # Scale frame to 640px width for YOLO processing (preserving aspect ratio)
-    original_frame = frame.copy()  # Keep original for display
-    target_width = 640
-    #yolo_frame = resize_with_aspect_ratio(frame, width=target_width)
-    yolo_frame = frame
+        return frame, []
+
+    global old_gray
+
+    of_frame = frame.copy()
+    mask = np.zeros_like(of_frame)
+
+    # Red cars, so red channel instead of normal gray scale conversion.
+    _, _, frame_gray = cv2.split(frame)
+    if not old_gray is None:
+        lk_params = dict(winSize=(15, 15), maxLevel=2, criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03))
+        p0 = cv2.goodFeaturesToTrack(old_gray, maxCorners=100, qualityLevel=0.3, minDistance=7, blockSize=7)
+        p1, st, err = cv2.calcOpticalFlowPyrLK(old_gray, frame_gray, p0, None, **lk_params)
+
+        good_new = p1[st == 1]
+        good_old = p0[st == 1]
+        p0 = good_new.reshape(-1, 1, 2)
+
+        # draw the tracks
+        for i, (new, old) in enumerate(zip(good_new, good_old)):
+            a, b = new.ravel()
+            c, d = old.ravel()
+            mask = cv2.line(mask, (int(a), int(b)), (int(c), int(d)), (0, 0, 255), 2)
+            of_frame = cv2.circle(of_frame, (int(a), int(b)), 5, (0, 0, 255), -1)
+            of_frame = cv2.add(of_frame, mask)
+
+    old_gray = frame_gray
+
+    #frame = cv2.cvtColor(frame_gray,cv2.COLOR_GRAY2RGB)
+
 
     # YOLOv8 class names (COCO dataset)
     class_names = model.names
 
     # Car class ID in COCO dataset (2: car, 5: bus, 7: truck)
-    vehicle_classes = [2, 5, 7]
+    vehicle_classes = [2, 7]
 
     # Get model prediction on the resized frame
-    results = model.predict(yolo_frame, imgsz=1920, conf=conf_threshold)[0]
+    results = model.predict(frame, imgsz=1920, conf=conf_threshold)[0]
 
 
     polygon = np.array(quad)
     polygon_zone = sv.PolygonZone(polygon=polygon)
 
-    #results = model(yolo_frame)[0]
+    #results = model(frame)[0]
     detections = sv.Detections.from_ultralytics(results)
     #is_detections_in_zone = polygon_zone.trigger(detections)
 
@@ -942,16 +966,9 @@ def process_frame_with_yolo(source, model, quad, conf_threshold=0.25, highlighte
     detections = smoother.update_with_detections(detections)
 
     annotated_image = mask_annotator.annotate(
-        scene=yolo_frame.copy(), detections=detections)
+        scene=of_frame.copy(), detections=detections)
     output_frame = annotated_image
 
-
-    # Use the original frame for output (full resolution)
-    #output_frame = original_frame.copy()
-
-    # Scale factor to map detections back to original frame
-    scale_x = original_frame.shape[1] / yolo_frame.shape[1]
-    scale_y = original_frame.shape[0] / yolo_frame.shape[0]
 
     # List to store car detections (for click detection later)
     car_detections = []
@@ -966,10 +983,10 @@ def process_frame_with_yolo(source, model, quad, conf_threshold=0.25, highlighte
         cls_id = int(cls_id)
 
         # Scale the coordinates back to the original image size
-        x1 = int(x1 * scale_x)
-        y1 = int(y1 * scale_y)
-        x2 = int(x2 * scale_x)
-        y2 = int(y2 * scale_y)
+        x1 = int(x1)
+        y1 = int(y1)
+        x2 = int(x2)
+        y2 = int(y2)
 
         # Calculate center point of the bounding box
         center_x = (x1 + x2) // 2
@@ -1018,6 +1035,7 @@ def process_frame_with_yolo(source, model, quad, conf_threshold=0.25, highlighte
             # cv2.putText(output_frame, label, (x1, y1_label - 5),
             #            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 2)
 
+    print("Processing took: ", (time.time() - p_start_time)*1000, "ms")
     return output_frame, car_detections
 
 

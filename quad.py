@@ -9,7 +9,7 @@ class Quad:
     starting from top-left: [(x1,y1), (x2,y2), (x3,y3), (x4,y4)]
     """
 
-    def __init__(self, quad_points, field_size=[160, 300]):
+    def __init__(self, quad_points, field_size=[100, 300]):
         """
         Initialize a Quad with four corner points.
 
@@ -18,7 +18,7 @@ class Quad:
                                in counter-clockwise order, starting from top-left:
                                [(x1,y1), (x2,y2), (x3,y3), (x4,y4)]
             field_size (list): The field dimensions [width, height] to use for field coordinate
-                              transformations. Defaults to [160, 300].
+                              transformations. Defaults to [100, 300].
         """
         if len(quad_points) != 4:
             raise ValueError("Quad must be initialized with exactly 4 points")

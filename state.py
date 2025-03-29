@@ -278,12 +278,12 @@ class State:
         self.camera1_points = [[0, 0] for _ in range(4)]
         self.camera2_points = [[0, 0] for _ in range(4)]
 
-        self.field_size = [160, 300]
+        self.field_size = [100, 300]
 
         # POI positions in field coordinates (previously normalized 0-1)
         self.poi_positions = [
-            (32, 90), (80, 150), (128, 210), (48, 240), (112, 60),
-            (16, 270), (144, 30), (64, 180), (96, 120)
+            (32, 90), (80, 150), (99, 210), (48, 240), (99, 60),
+            (16, 270), (99, 30), (64, 180), (96, 120)
         ]
 
         self.poi_ranges = [45, 15, 3]
