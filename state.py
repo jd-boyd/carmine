@@ -4,7 +4,8 @@ import numpy as np
 from quad import Quad
 
 # Constants
-CONFIG_FILE = "carmine_config.json"
+PRIMARY_CONFIG_FILE = "config.json"
+LEGACY_CONFIG_FILE = "carmine_config.json"
 
 class State:
     """
@@ -114,10 +115,8 @@ class State:
             return None
 
         try:
-            # Create a quad from the camera points
             quad = Quad(camera_points)
 
-            # Convert to UV coordinates (normalized 0-1 coordinates)
             uv = quad.point_to_uv(camera_x, camera_y)
 
             if uv is None:
@@ -154,7 +153,7 @@ class State:
         self.car_field_position = self.camera_to_field_position(center_x, center_y)
 
     def save_config(self):
-        """Save the current configuration to a JSON file"""
+        """Save the current configuration to the primary JSON file"""
         try:
             config = {
                 'selected_camera1': self.selected_camera1,
@@ -165,20 +164,27 @@ class State:
                 'poi_positions': self.poi_positions
             }
 
-            with open(CONFIG_FILE, 'w') as f:
+            with open(PRIMARY_CONFIG_FILE, 'w') as f:
                 json.dump(config, f, indent=4)
-            print(f"Configuration saved to {CONFIG_FILE}")
+            print(f"Configuration saved to {PRIMARY_CONFIG_FILE}")
         except Exception as e:
             print(f"Error saving configuration: {e}")
 
     def load_config(self):
         """Load configuration from a JSON file if it exists"""
         try:
-            if not os.path.exists(CONFIG_FILE):
-                print(f"No configuration file found at {CONFIG_FILE}")
+            # Try to load the primary config file first
+            if os.path.exists(PRIMARY_CONFIG_FILE):
+                config_file = PRIMARY_CONFIG_FILE
+            # Fall back to legacy config file if primary doesn't exist
+            elif os.path.exists(LEGACY_CONFIG_FILE):
+                config_file = LEGACY_CONFIG_FILE
+                print(f"Using legacy config file: {LEGACY_CONFIG_FILE}")
+            else:
+                print(f"No configuration file found")
                 return
 
-            with open(CONFIG_FILE, 'r') as f:
+            with open(config_file, 'r') as f:
                 config = json.load(f)
 
             # Load camera selection
@@ -201,7 +207,12 @@ class State:
             if 'poi_positions' in config:
                 self.poi_positions = config['poi_positions']
 
-            print(f"Configuration loaded from {CONFIG_FILE}")
+            print(f"Configuration loaded from {config_file}")
+
+            # If we loaded from legacy file, save to the primary file for future use
+            if config_file == LEGACY_CONFIG_FILE:
+                self.save_config()
+                print(f"Migrated configuration to {PRIMARY_CONFIG_FILE}")
         except Exception as e:
             print(f"Error loading configuration: {e}")
 
@@ -211,10 +222,8 @@ class State:
         self.camera1_points = [[0, 0] for _ in range(4)]
         self.camera2_points = [[0, 0] for _ in range(4)]
 
-        # Reset field size
         self.field_size = [160, 300]
 
-        # Reset POI positions to defaults
         self.poi_positions = [
             (0.2, 0.3), (0.5, 0.5), (0.8, 0.7), (0.3, 0.8), (0.7, 0.2),
             (0.1, 0.9), (0.9, 0.1), (0.4, 0.6), (0.6, 0.4), (0.5, 0.8)

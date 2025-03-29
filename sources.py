@@ -42,13 +42,84 @@ class Source:
 
     @property
     def width(self):
-        """Width of the source in pixels"""
-        raise NotImplementedError
+        return self._width
 
     @property
     def height(self):
-        """Height of the source in pixels"""
-        raise NotImplementedError
+        return self._height
+
+
+class PlaceholderSource(Source):
+    """Source that provides a placeholder image with text when no other source is available"""
+
+    def __init__(self, width=640, height=480, message="No video source available"):
+        self._width = width
+        self._height = height
+        self.message = message
+
+        # Create a blank image with dark gray background
+        self.frame = np.zeros((height, width, 3), dtype=np.uint8)
+        self.frame[:] = (50, 50, 50)  # Dark gray background
+
+        # Add text message to the image
+        self._add_text_to_frame()
+
+        # Create OpenGL texture from the frame
+        self.texture_id = create_opengl_texture(self.frame)
+
+    def _add_text_to_frame(self):
+        """Add text message to the center of the frame"""
+        # Define font settings
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        font_scale = 1.0
+        font_color = (255, 255, 255)  # White
+        font_thickness = 2
+
+        # Get text size to center it
+        text_size = cv2.getTextSize(self.message, font, font_scale, font_thickness)[0]
+
+        # Calculate text position to center it
+        text_x = int((self._width - text_size[0]) / 2)
+        text_y = int((self._height + text_size[1]) / 2)
+
+        # Put text on the image
+        cv2.putText(
+            self.frame,
+            self.message,
+            (text_x, text_y),
+            font,
+            font_scale,
+            font_color,
+            font_thickness
+        )
+
+        # Add helper text below main message
+        helper_message = "Select a camera or video file to begin"
+        helper_font_scale = 0.7
+        helper_text_size = cv2.getTextSize(helper_message, font, helper_font_scale, font_thickness)[0]
+        helper_x = int((self._width - helper_text_size[0]) / 2)
+        helper_y = text_y + 40
+
+        cv2.putText(
+            self.frame,
+            helper_message,
+            (helper_x, helper_y),
+            font,
+            helper_font_scale,
+            font_color,
+            font_thickness
+        )
+
+
+    def set_message(self, message):
+        """Update the placeholder message and redraw the frame"""
+        self.message = message
+        # Reset frame to dark gray
+        self.frame[:] = (50, 50, 50)
+        # Add new text
+        self._add_text_to_frame()
+        # Update the texture
+        update_opengl_texture(self.texture_id, self.frame)
 
 
 class StillSource(Source):
@@ -64,13 +135,6 @@ class StillSource(Source):
         self._height = self.frame.shape[0]
         self.texture_id = create_opengl_texture(self.frame)
 
-    @property
-    def width(self):
-        return self._width
-
-    @property
-    def height(self):
-        return self._height
 
 
 class VideoSource(Source):
@@ -123,13 +187,6 @@ class VideoSource(Source):
 
         return self.frame
 
-    @property
-    def width(self):
-        return self._width
-
-    @property
-    def height(self):
-        return self._height
 
 def enumerate_avf_sources():
     """
@@ -221,11 +278,3 @@ class AVFSource(VideoSource):
             self.last_frame_time = current_time
 
         return self.frame
-
-    @property
-    def width(self):
-        return self._width
-
-    @property
-    def height(self):
-        return self._height

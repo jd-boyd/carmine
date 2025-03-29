@@ -176,6 +176,8 @@ cython_debug/
 # Project specific debug
 output
 frame_dump
+carmine_config.json
+config.json
 
 
 # emacs

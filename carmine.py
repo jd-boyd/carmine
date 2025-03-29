@@ -13,6 +13,7 @@ import sources
 from sources import create_opengl_texture, update_opengl_texture
 from quad import Quad
 from state import State
+from file_dialog import open_file_dialog, save_file_dialog
 
 
 class CameraDisplay:
@@ -461,9 +462,13 @@ class ControlPanel:
         self.state = state
         self.field_viz = field_viz
         self.camera_display = camera_display
+        self.prev_selected_camera1 = state.selected_camera1
+        self.video_path = None  # Store the selected video file path
 
     def draw(self):
         """Draw the control panel UI and update state values"""
+        reinit_camera = False
+
         if imgui.begin("Control Panel", True):
             imgui.text("Cameras")
             changed1, self.state.selected_camera1 = imgui.combo(
@@ -471,6 +476,8 @@ class ControlPanel:
             )
             if changed1:
                 self.state.save_config()
+                # Signal that camera source needs to be reinitialized
+                reinit_camera = True
 
             changed2, self.state.selected_camera2 = imgui.combo(
                 "Camera 2", self.state.selected_camera2, [c[1] for c in self.state.camera_list]
@@ -658,6 +665,8 @@ class ControlPanel:
 
             imgui.end()
 
+        return reinit_camera
+
 
 def create_glfw_window(window_name="Carmine", width=1920, height=1080):
     if not glfw.init():
@@ -830,7 +839,11 @@ def process_camera_frame(source, model, app_state):
     # Get the raw frame
     raw_frame = source.get_frame()
 
-    # Process with YOLO if needed
+    # Skip YOLO processing if this is a PlaceholderSource
+    if isinstance(source, sources.PlaceholderSource):
+        return raw_frame, []
+
+    # Process with YOLO for real video sources
     processed_frame, car_detections = process_frame_with_yolo(raw_frame, model, highlighted_car=False) #app_state.highlighted_car)
 
     # Update texture with processed frame
@@ -841,9 +854,9 @@ def process_camera_frame(source, model, app_state):
 def main():
     camera_list = []
     for camera_info in sources.enumerate_avf_sources(): #enumerate_cameras():
-        desc = (camera_info.index, f'{camera_info[0]}: {camera_info[1]}')
-        print(desc[1])
-        camera_list.append(desc)
+        # Format: [(index, name), ...]
+        print(f'{camera_info[0]}: {camera_info[1]}')
+        camera_list.append(camera_info)
 
     model=YOLO('yolov9s.pt')
 
@@ -858,14 +871,23 @@ def main():
     global control_panel, field_viz, camera_display
     field_viz = FieldVisualization(app_state)
 
-    # Initialize video sources
-    #source_1 = sources.VideoSource('../AI_angles.mov')
-    source_1 = sources.AVFSource(2)
-    #source_1 = sources.BMSource()
+    # Initialize video sources with error handling
+    camera1_id = app_state.get_camera1_id()
+    try:
+        source_1 = sources.AVFSource(camera1_id if camera1_id is not None else 0)
+    except Exception as e:
+        print(f"Error initializing camera: {e}")
+        # Create a placeholder source with error message
+        source_1 = sources.PlaceholderSource(
+            width=1920,
+            height=1080,
+            message=f"Camera Error: {str(e)}"
+        )
+
     try:
         source_2 = sources.VideoSource('../AI_angle_2.mov')
     except Exception as e:
-        print("Couldn't open AI_angle_2.mov.")
+        print(f"Couldn't open AI_angle_2.mov: {e}")
         source_2 = None
 
     camera_display = CameraDisplay(app_state, source_1)
@@ -921,9 +943,32 @@ def main():
             # Draw the camera view using the CameraDisplay class
             camera_display.draw()
 
-
             # Draw the control panel and update its values
-            control_panel.draw()
+            reinit_camera = control_panel.draw()
+
+            # Check if we need to reinitialize camera source
+            if reinit_camera:
+                # Get the updated camera ID
+                camera1_id = app_state.get_camera1_id()
+                # Reinitialize camera source with the selected camera ID
+                try:
+                    new_source = sources.AVFSource(camera1_id if camera1_id is not None else 0)
+                    # Update the camera display with the new source
+                    source_1 = new_source
+                    camera_display.source = new_source
+                    print(f"Switched to camera {camera1_id}")
+                except Exception as e:
+                    error_message = f"Camera Error: {str(e)}"
+                    print(f"Error switching camera: {e}")
+                    # Create a placeholder source with the error message
+                    new_source = sources.PlaceholderSource(
+                        width=1920,
+                        height=1080,
+                        message=error_message
+                    )
+                    # Update the camera display with the placeholder source
+                    source_1 = new_source
+                    camera_display.source = new_source
 
             # Draw the field visualization
             field_viz.draw()
