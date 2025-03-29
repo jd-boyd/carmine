@@ -15,7 +15,7 @@ import sources
 from sources import create_opengl_texture, update_opengl_texture
 from quad import Quad
 from state import State
-from file_dialog import open_file_dialog, save_file_dialog
+#from file_dialog import open_file_dialog, save_file_dialog
 
 
 class CameraDisplay:
