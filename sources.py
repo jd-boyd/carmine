@@ -4,10 +4,6 @@ import cv2
 import numpy as np
 import subprocess
 import re
-try:
-    import bmcapture
-except ModuleNotFoundError:
-    print("BMCapture not available.")
 
 import time
 
