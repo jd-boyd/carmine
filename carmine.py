@@ -289,6 +289,18 @@ class CameraDisplay:
                     point_idx = self.state.waiting_for_camera2_point
                     self.state.set_camera_point(2, point_idx, frame_x, frame_y)
                     print(f"Set Camera 2 Point {point_idx+1} to ({frame_x}, {frame_y})")
+                    
+                # Check if we're waiting to set a POI position (allow POI setting from camera view)
+                elif self.state.waiting_for_poi_point >= 0:
+                    # Convert camera coordinates to field coordinates
+                    field_position = self.state.camera_to_field_position(frame_x, frame_y)
+                    
+                    if field_position:
+                        # Set the POI position
+                        point_idx = self.state.waiting_for_poi_point
+                        field_x, field_y = field_position
+                        self.state.set_poi_position(point_idx, field_x, field_y)
+                        print(f"Set POI {point_idx+1} to field position ({field_x:.1f}, {field_y:.1f}) from camera view")
 
         imgui.end()
 
@@ -729,7 +741,7 @@ class ControlPanel:
                 # Indicate if we're waiting for this point to be set
                 if self.state.waiting_for_poi_point == i:
                     imgui.same_line()
-                    imgui.text_colored("Waiting for click on field...", 1, 0.5, 0, 1)
+                    imgui.text_colored("Click on camera or field view...", 1, 0.5, 0, 1)
 
                 # Add Set button
                 imgui.same_line()
@@ -746,7 +758,7 @@ class ControlPanel:
                         # Reset any other waiting state
                         self.state.waiting_for_camera1_point = -1
                         self.state.waiting_for_camera2_point = -1
-                        print(f"Click on the field visualization to set POI {i+1}")
+                        print(f"Click on either the camera view or field visualization to set POI {i+1}")
 
             imgui.separator()
 
