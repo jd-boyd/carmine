@@ -54,6 +54,16 @@ class CameraDisplay:
                 int(mouse_window_y * self.scale))
 
 
+    def get_mouse_in_field_space(self):
+
+        point_x, point_y = self.get_mouse_in_image_space()
+
+        f_x, f_y = self.state.camera1_quad.point_to_field(point_x, point_y)
+
+        # Scale to image space based on current zoom level
+        return (f_x, f_y)
+
+
     def draw(self):
         """
         Draw the camera view with overlays.
@@ -691,6 +701,8 @@ class ControlPanel:
             imgui.text("Cursor pos WS: ({}, {})".format(*self.camera_display.get_mouse_in_window_space()))
 
             imgui.text("Cursor pos IS: ({}, {})".format(*self.camera_display.get_mouse_in_image_space()))
+
+            imgui.text("Cursor pos FS: ({}, {})".format(*self.camera_display.get_mouse_in_field_space()))
 
 
             changed, checked = imgui.checkbox("Car box", self.state.c1_show_carbox)

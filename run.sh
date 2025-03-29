@@ -1,3 +1,3 @@
 source venv/bin/activate
-python ./carmine.py
+PYTHONFAULTHANDLER=1 python ./carmine.py
 
