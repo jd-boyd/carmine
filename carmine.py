@@ -844,6 +844,11 @@ class ControlPanel:
 
             # Config Management
             imgui.text("Configuration")
+            if imgui.button("Reload Config"):
+                self.state.load_config()
+                print("Configuration reloaded from file")
+            
+            imgui.same_line()
             if imgui.button("Reset to Defaults"):
                 if imgui.begin_popup_modal("Confirm Reset", True):
                     imgui.text("Are you sure you want to reset all configuration to defaults?")
