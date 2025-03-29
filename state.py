@@ -34,7 +34,7 @@ class State:
         # Keep these for backward compatibility
         self.highlighted_car = None
         self.car_field_position = None
-        
+
         self.max_cars = 10  # Maximum number of cars to track
         self.c1_show_carbox = True
         self.c1_show_mines = True
@@ -52,7 +52,7 @@ class State:
 
     def set_c1_cursor(self, c):
         self.c1_cursor = c
-        
+
         # Calculate field position from cursor coordinates if cursor is not empty
         if c and len(c) == 2:
             self.c1_cursor_field_position = self.camera_to_field_position(c[0], c[1])
@@ -61,19 +61,19 @@ class State:
 
     def set_car_detections(self, car_detections):
         self.car_detections = car_detections
-        
+
         # Clear previous highlighted cars
         self.highlighted_cars = []
         self.car_field_positions = []
-        
+
         # Process up to max_cars detections
         cars_to_process = min(len(car_detections), self.max_cars)
-        
+
         # Process each car in the detections
         for i in range(cars_to_process):
             car = car_detections[i]
             self.highlight_car(car)
-            
+
         # For backward compatibility - set the first car as the primary highlighted car
         if len(self.highlighted_cars) > 0:
             self.highlighted_car = self.highlighted_cars[0]
@@ -114,29 +114,29 @@ class State:
     def field_to_uv(self, field_x, field_y):
         """
         Convert field coordinates to UV coordinates (0-1)
-        
+
         Args:
             field_x: X coordinate in field units
             field_y: Y coordinate in field units
-            
+
         Returns:
             tuple: (u, v) normalized coordinates (0-1)
         """
         return (field_x / self.field_size[0], field_y / self.field_size[1])
-    
+
     def uv_to_field(self, u, v):
         """
         Convert UV coordinates (0-1) to field coordinates
-        
+
         Args:
             u: U coordinate (0-1)
             v: V coordinate (0-1)
-            
+
         Returns:
             tuple: (x, y) field coordinates
         """
         return (u * self.field_size[0], v * self.field_size[1])
-    
+
     def camera_to_field_position(self, camera_x, camera_y, camera_num=1):
         """
         Convert a camera point (in pixel coordinates) to field position (in field coordinates)
@@ -160,17 +160,17 @@ class State:
             return None
 
         try:
-            quad = Quad(camera_points)
+            # Create a quad with the current field size
+            quad = Quad(camera_points, field_size=self.field_size)
 
-            uv = quad.point_to_uv(camera_x, camera_y)
+            # Directly convert camera coordinates to field coordinates
+            field_position = quad.point_to_field(camera_x, camera_y)
 
-            if uv is None:
+            if field_position is None:
                 print("Could not calculate field position - invalid transformation")
                 return None
 
-            # Convert UV to field coordinates
-            field_x, field_y = self.uv_to_field(uv[0], uv[1])
-            return (field_x, field_y)
+            return field_position
         except Exception as e:
             print(f"Error converting camera to field position: {e}")
             return None
@@ -196,7 +196,7 @@ class State:
 
         # Convert to field position (already in field coordinates)
         field_position = self.camera_to_field_position(center_x, center_y)
-        
+
         # Add field position to the list
         if field_position is not None:
             self.car_field_positions.append(field_position)
@@ -255,6 +255,9 @@ class State:
             # Load POI positions
             if 'poi_positions' in config:
                 self.poi_positions = config['poi_positions']
+                if len(self.poi_positions) > 9:
+                    self.poi_positions = self.poi_positions[0:9]
+
 
             print(f"Configuration loaded from {config_file}")
 
@@ -276,7 +279,7 @@ class State:
         # POI positions in field coordinates (previously normalized 0-1)
         self.poi_positions = [
             (32, 90), (80, 150), (128, 210), (48, 240), (112, 60),
-            (16, 270), (144, 30), (64, 180), (96, 120), (80, 240)
+            (16, 270), (144, 30), (64, 180), (96, 120)
         ]
 
     def calculate_poi_distances(self, car_index=0):
@@ -309,7 +312,7 @@ class State:
         # Sort by distance
         distances.sort(key=lambda x: x[1])
         return distances
-        
+
     def calculate_all_car_poi_distances(self):
         """
         Calculate distances between all cars and each point of interest.
@@ -319,11 +322,11 @@ class State:
                   for that car, sorted by distance
         """
         all_distances = []
-        
+
         # Use car_field_positions list for all cars
         for i in range(len(self.car_field_positions)):
             car_distances = self.calculate_poi_distances(i)
             if car_distances:
                 all_distances.append(car_distances)
-                
+
         return all_distances

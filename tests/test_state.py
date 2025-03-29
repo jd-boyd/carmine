@@ -67,7 +67,7 @@ class TestState(unittest.TestCase):
         self.assertEqual(self.state.field_size, [160, 300])
 
         # Test POI positions
-        self.assertEqual(len(self.state.poi_positions), 10)
+        self.assertEqual(len(self.state.poi_positions), 9)
         self.assertEqual(self.state.poi_positions[0], (32, 90))
 
     def test_camera_point_management(self):
@@ -99,8 +99,8 @@ class TestState(unittest.TestCase):
         self.assertEqual(self.state.waiting_for_poi_point, -1)
 
         # Test with invalid index
-        self.state.set_poi_position(10, 16, 30)
-        self.assertEqual(len(self.state.poi_positions), 10)
+        self.state.set_poi_position(9, 16, 30)
+        self.assertEqual(len(self.state.poi_positions), 9)
 
     def test_config_save_load(self):
         """Test saving and loading configuration"""
@@ -194,15 +194,14 @@ class TestState(unittest.TestCase):
             (0, 50),    # Middle of left edge - distance = 50
             (50, 50),   # Same position as car - distance = 0
             (40, 40),   # Also near the car
-            (90, 90),   # Further away
-            (10, 90)    # Diagonally away
+            (90, 90)    # Further away
         ]
 
         # Calculate distances
         distances = self.state.calculate_poi_distances()
 
         # Check that we got the expected number of distances
-        self.assertEqual(len(distances), 10)
+        self.assertEqual(len(distances), 9)
 
         # Verify that distances are tuples of (poi_index, distance)
         self.assertEqual(len(distances[0]), 2)

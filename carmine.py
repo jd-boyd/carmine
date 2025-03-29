@@ -47,7 +47,7 @@ class CameraDisplay:
         # Calculate mouse position in window space first
         mouse_window_x = self.mouse_x - self.window_pos_x
         mouse_window_y = self.mouse_y - self.window_pos_y
-        
+
         # Scale to image space based on current zoom level
         return (int(mouse_window_x * self.scale),
                 int(mouse_window_y * self.scale))
@@ -169,15 +169,11 @@ class CameraDisplay:
 
                 # Go through each POI
                 for i, (field_x, field_y) in enumerate(self.state.poi_positions):
-                    # Convert from field coordinates to normalized UV coordinates
-                    poi_u = field_x / self.state.field_size[0]
-                    poi_v = field_y / self.state.field_size[1]
-                    
-                    # Create a quad from the camera points
+                    # Create a quad from the camera points with field size
                     try:
-                        quad = self.camera1_quad
-                        # Convert from UV coordinates to camera coordinates
-                        camera_coords = quad.uv_to_point(poi_u, poi_v)
+                        quad = Quad(self.state.camera1_points, field_size=self.state.field_size)
+                        # Convert directly from field to camera coordinates
+                        camera_coords = quad.field_to_point(field_x, field_y)
 
                         if camera_coords:
                             cam_x, cam_y = camera_coords
@@ -185,20 +181,25 @@ class CameraDisplay:
                             screen_x = cursor_pos_x + (cam_x * scale_x)
                             screen_y = cursor_pos_y + (cam_y * scale_y)
 
-                            # Draw a red X marker for each POI
+                            # Draw a red triangle marker for each POI
                             marker_size = 10.0
                             mine_color = imgui.get_color_u32_rgba(1, 0, 0, 1)  # Red
 
-                            # Draw X
-                            draw_list.add_line(
-                                screen_x - marker_size, screen_y - marker_size,
-                                screen_x + marker_size, screen_y + marker_size,
-                                mine_color, 2.0
+                            # Draw triangle (pointing upward)
+                            draw_list.add_triangle(
+                                screen_x, screen_y - marker_size,               # top vertex
+                                screen_x - marker_size, screen_y + marker_size,  # bottom left vertex
+                                screen_x + marker_size, screen_y + marker_size,  # bottom right vertex
+                                mine_color, 2.0  # outline width
                             )
-                            draw_list.add_line(
-                                screen_x - marker_size, screen_y + marker_size,
-                                screen_x + marker_size, screen_y - marker_size,
-                                mine_color, 2.0
+                            
+                            # Add filled triangle with semi-transparency
+                            fill_color = imgui.get_color_u32_rgba(1, 0, 0, 0.5)  # semi-transparent red
+                            draw_list.add_triangle_filled(
+                                screen_x, screen_y - marker_size,               # top vertex
+                                screen_x - marker_size, screen_y + marker_size,  # bottom left vertex
+                                screen_x + marker_size, screen_y + marker_size,  # bottom right vertex
+                                fill_color
                             )
 
                             # Draw POI number
@@ -346,19 +347,19 @@ class FieldVisualization:
             # Draw cursor position on field if available
             if self.state.c1_cursor_field_position:
                 cursor_x, cursor_y = self.state.c1_cursor_field_position
-                
+
                 # Normalize cursor coordinates (since they're in field units)
                 norm_cursor_x = cursor_x / self.state.field_size[0]
                 norm_cursor_y = cursor_y / self.state.field_size[1]
-                
+
                 # Convert to canvas coordinates with horizontal flipping
                 cursor_canvas_x = canvas_pos_x + ((1-norm_cursor_x) * canvas_width)
                 cursor_canvas_y = canvas_pos_y + (norm_cursor_y * canvas_height)
-                
+
                 # Draw cursor as a plus symbol
                 cursor_marker_size = 8.0
                 cursor_color = imgui.get_color_u32_rgba(0, 1, 0.5, 1)  # Teal color
-                
+
                 # Draw plus symbol
                 draw_list.add_line(
                     cursor_canvas_x - cursor_marker_size, cursor_canvas_y,
@@ -370,7 +371,7 @@ class FieldVisualization:
                     cursor_canvas_x, cursor_canvas_y + cursor_marker_size,
                     cursor_color, 1.5
                 )
-                
+
                 # Draw a label
                 draw_list.add_text(
                     cursor_canvas_x + cursor_marker_size + 4,
@@ -378,7 +379,7 @@ class FieldVisualization:
                     cursor_color,
                     "Cursor"
                 )
-            
+
             # Draw multiple cars if available
             car_positions = self.state.car_field_positions
 
@@ -402,13 +403,13 @@ class FieldVisualization:
                     break  # Don't exceed the number of defined colors
 
                 car_x, car_y = car_pos
-                
+
                 # Normalize the car coordinates (since they're now in field units)
                 norm_car_x = car_x / self.state.field_size[0]
                 norm_car_y = car_y / self.state.field_size[1]
 
                 # Convert to canvas coordinates, flipping horizontally
-                car_canvas_x = canvas_pos_x + ((1-norm_car_x) * canvas_width)  # 1-x to flip horizontally  
+                car_canvas_x = canvas_pos_x + ((1-norm_car_x) * canvas_width)  # 1-x to flip horizontally
                 car_canvas_y = canvas_pos_y + (norm_car_y * canvas_height)
 
                 # Draw a larger symbol for the car (circle with dot in center)
@@ -453,26 +454,36 @@ class FieldVisualization:
                 # Normalize the field coordinates to 0-1 range for canvas positioning
                 norm_x = field_x / self.state.field_size[0]
                 norm_y = field_y / self.state.field_size[1]
-                
+
                 # Calculate pixel position on the canvas, flipping horizontally
                 poi_x = canvas_pos_x + ((1-norm_x) * canvas_width)  # 1-norm_x to flip horizontally
                 poi_y = canvas_pos_y + (norm_y * canvas_height)
 
-                # Draw X marker
+                # Draw triangle marker
                 marker_size = 5.0
                 # Use different color for the POI we're currently setting
                 color = imgui.get_color_u32_rgba(1, 1, 0, 1) if i == self.state.waiting_for_poi_point else imgui.get_color_u32_rgba(1, 0, 0, 1)
-
-                # Draw X
-                draw_list.add_line(
-                    poi_x - marker_size, poi_y - marker_size,
-                    poi_x + marker_size, poi_y + marker_size,
-                    color, 2.0
+                
+                # Draw triangle outline (pointing upward)
+                draw_list.add_triangle(
+                    poi_x, poi_y - marker_size,               # top vertex
+                    poi_x - marker_size, poi_y + marker_size,  # bottom left vertex
+                    poi_x + marker_size, poi_y + marker_size,  # bottom right vertex
+                    color, 2.0  # outline width
                 )
-                draw_list.add_line(
-                    poi_x - marker_size, poi_y + marker_size,
-                    poi_x + marker_size, poi_y - marker_size,
-                    color, 2.0
+                
+                # Add filled triangle with semi-transparency
+                fill_color = imgui.get_color_u32_rgba(
+                    1, 
+                    1 if i == self.state.waiting_for_poi_point else 0, 
+                    0, 
+                    0.5  # semi-transparent
+                )
+                draw_list.add_triangle_filled(
+                    poi_x, poi_y - marker_size,               # top vertex
+                    poi_x - marker_size, poi_y + marker_size,  # bottom left vertex
+                    poi_x + marker_size, poi_y + marker_size,  # bottom right vertex
+                    fill_color
                 )
 
                 # Draw POI number
@@ -638,12 +649,6 @@ class ControlPanel:
 
             imgui.text("Cursor pos IS: ({}, {})".format(*self.camera_display.get_mouse_in_image_space()))
 
-            muv = self.camera_display.get_mouse_in_uv_space()
-            muv = ["%0.4f" % x for x in muv]
-            imgui.text("Cursor pos UV: ({}, {})".format(*muv))
-
-
-
 
             changed, checked = imgui.checkbox("Car box", self.state.c1_show_carbox)
             if changed:
@@ -655,46 +660,11 @@ class ControlPanel:
                 self.state.c1_show_mines = checked
                 print(f"Checkbox state changed to: {checked}")
 
-
-
-
             imgui.separator()
 
-            # # Camera 2 points with display and Set button
-            # imgui.text("Camera2 Points:")
-            # for i in range(4):
-            #     # Display the current value as (x, y)
-            #     x, y = self.state.camera2_points[i]
-
-            #     if i % 2:
-            #         imgui.same_line()
-
-            #     imgui.text(f"{i+1}: ({x}, {y})")
-
-            #     # Indicate if we're waiting for this point to be set
-            #     if self.state.waiting_for_camera2_point == i:
-            #         imgui.same_line()
-            #         imgui.text_colored("Waiting for click on image...", 1, 0.5, 0, 1)
-
-            #     # Add Set button
-            #     imgui.same_line()
-
-            #     # Change button color/text if this is the active point waiting for selection
-            #     button_text = "Cancel" if self.state.waiting_for_camera2_point == i else "Set"
-            #     if imgui.button(f"{button_text}##cam2_{i}"):
-            #         if self.state.waiting_for_camera2_point == i:
-            #             # Cancel selection mode
-            #             self.state.waiting_for_camera2_point = -1
-            #         else:
-            #             # Enter selection mode for this point
-            #             self.state.waiting_for_camera2_point = i
-            #             # Reset any other waiting state
-            #             self.state.waiting_for_camera1_point = -1
-            #             print(f"Click on the image to set Camera 2 Point {i+1}")
-            # imgui.separator()
 
             imgui.text("Points of Interest")
-            for i in range(10):
+            for i in range(len(self.state.poi_positions)):
                 # Get position coordinates (now in field units)
                 x, y = self.state.poi_positions[i]
 
