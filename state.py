@@ -40,6 +40,7 @@ class State:
         self.c1_show_mines = True
         self.c1_cursor = []
         self.c1_cursor_field_position = None
+        self.processing_paused = False  # Flag to control YOLO and detector processing
 
         self.car_detections = []  # Raw detections from YOLO
 

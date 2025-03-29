@@ -746,6 +746,33 @@ class ControlPanel:
                 imgui.text("No cars detected")
 
             imgui.separator()
+            
+            # Processing Control
+            imgui.text("Processing Control")
+            
+            # Add the pause processing button
+            if self.state.processing_paused:
+                if imgui.button("Resume Processing", width=150, height=0):
+                    self.state.processing_paused = False
+                    self.state.save_config()
+                    print("Processing resumed")
+                # Add indicator text when paused
+                imgui.same_line()
+                imgui.text_colored("PAUSED", 1, 0.5, 0, 1)
+            else:
+                if imgui.button("Pause Processing", width=150, height=0):
+                    self.state.processing_paused = True
+                    self.state.save_config()
+                    print("Processing paused")
+            
+            # Add a tooltip to explain what pausing does
+            if imgui.is_item_hovered():
+                imgui.begin_tooltip()
+                imgui.text("Pause/resume YOLO and detector processing.")
+                imgui.text("Video will continue to update when paused.")
+                imgui.end_tooltip()
+                
+            imgui.separator()
 
             # Config Management
             imgui.text("Configuration")
@@ -825,8 +852,9 @@ def process_frame_with_yolo(source, model, quad, conf_threshold=0.25, highlighte
     Process a single frame with YOLOv8 to detect cars
 
     Args:
-        frame: Input frame
+        source: Video source
         model: YOLOv8 model
+        quad: Points defining the field boundary
         conf_threshold: Confidence threshold
         highlighted_car: Optional [x1, y1, x2, y2, conf, cls_id] of a car to highlight
 
@@ -835,6 +863,7 @@ def process_frame_with_yolo(source, model, quad, conf_threshold=0.25, highlighte
         Car detections are in format [[x1, y1, x2, y2, conf, cls_id], ...]
     """
 
+    # Use the frame provided by the caller
     frame = source.get_frame()
 
     # Skip YOLO processing if this is a PlaceholderSource
@@ -1039,15 +1068,22 @@ def main():
                     imgui.end_menu()
                 imgui.end_main_menu_bar()
 
-            processed_frame, car_detections = process_frame_with_yolo(source_1, model,
-                                                                      app_state.camera1_points,
-                                                                      highlighted_car=False) #app_state.highlighted_car)
-
-            # Update texture with processed frame
+            # Get a fresh frame from the source
+            frame = source_1.get_frame()
+            
+            # Only run YOLO processing if not paused
+            if not app_state.processing_paused:
+                processed_frame, car_detections = process_frame_with_yolo(source_1, model,
+                                                                          app_state.camera1_points,
+                                                                          highlighted_car=False)
+                # Update detections only when processing is active
+                app_state.set_car_detections(car_detections)
+            else:
+                # When paused, just use the raw frame without processing
+                processed_frame = frame
+            
+            # Always update texture with the current frame (processed or raw)
             sources.update_opengl_texture(source_1.get_texture_id(), processed_frame)
-
-
-            app_state.set_car_detections(car_detections)
             # Draw the camera view using the CameraDisplay class
             camera_display.draw()
 
