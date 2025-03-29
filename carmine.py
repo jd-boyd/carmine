@@ -100,28 +100,28 @@ class CameraDisplay:
 
             draw_list = imgui.get_window_draw_list()
 
-            for car_det in self.state.car_detections:
-                hx1, hy1, hx2, hy2, _, _ = car_det #self.state.car_detections[0]
-                hx1 /= self.scale
-                hy1 /= self.scale
-                hx2 /= self.scale
-                hy2 /= self.scale
-                # Check if this is approximately the same detection
-                overlap_threshold = 0.7  # Adjust if needed
-                # Check that the centers are close to each other
-                h_center_x = (hx1 + hx2) // 2
-                h_center_y = (hy1 + hy2) // 2
+            # for car_det in self.state.car_detections:
+            #     hx1, hy1, hx2, hy2, _, _ = car_det #self.state.car_detections[0]
+            #     hx1 /= self.scale
+            #     hy1 /= self.scale
+            #     hx2 /= self.scale
+            #     hy2 /= self.scale
+            #     # Check if this is approximately the same detection
+            #     overlap_threshold = 0.7  # Adjust if needed
+            #     # Check that the centers are close to each other
+            #     h_center_x = (hx1 + hx2) // 2
+            #     h_center_y = (hy1 + hy2) // 2
 
-                x_nudge, y_nudge = 20, 20
+            #     x_nudge, y_nudge = 20, 20
 
-                # Draw field outline with thicker border
-                draw_list.add_rect(
-                    self.window_pos_x+hx1+x_nudge, self.window_pos_y+hy1+y_nudge,
-                    self.window_pos_x+hx2+x_nudge, self.window_pos_y+hy2+y_nudge,
+            #     # Draw field outline with thicker border
+            #     draw_list.add_rect(
+            #         self.window_pos_x+hx1+x_nudge, self.window_pos_y+hy1+y_nudge,
+            #         self.window_pos_x+hx2+x_nudge, self.window_pos_y+hy2+y_nudge,
 
-                    imgui.get_color_u32_rgba(0, 1, 1, 1),
-                    0, 2.0  # No rounding, 2px thickness
-                )
+            #         imgui.get_color_u32_rgba(0, 1, 1, 1),
+            #         0, 2.0  # No rounding, 2px thickness
+            #     )
 
             # Check if centers are within a small distance
             # distance = np.sqrt((center_x - h_center_x)**2 + (center_y - h_center_y)**2)
@@ -782,6 +782,8 @@ def resize_with_aspect_ratio(image, width=None, height=None, inter=cv2.INTER_ARE
 
 tracker = sv.ByteTrack()
 smoother = sv.DetectionsSmoother()
+mask_annotator = sv.MaskAnnotator()
+
 
 def process_frame_with_yolo(source, model, quad, conf_threshold=0.25, highlighted_car=None):
     """
@@ -833,8 +835,13 @@ def process_frame_with_yolo(source, model, quad, conf_threshold=0.25, highlighte
     detections = tracker.update_with_detections(detections)
     detections = smoother.update_with_detections(detections)
 
+    annotated_image = mask_annotator.annotate(
+        scene=yolo_frame.copy(), detections=detections)
+    output_frame = annotated_image
+
+
     # Use the original frame for output (full resolution)
-    output_frame = original_frame.copy()
+    #output_frame = original_frame.copy()
 
     # Scale factor to map detections back to original frame
     scale_x = original_frame.shape[1] / yolo_frame.shape[1]
@@ -882,9 +889,9 @@ def process_frame_with_yolo(source, model, quad, conf_threshold=0.25, highlighte
             #     if distance < 30:  # Adjust threshold as needed
             #         is_highlighted = True
 
-            # # Draw bounding box (yellow if highlighted, green otherwise)
-            # box_color = (0, 255, 255) if is_highlighted else (0, 255, 0)
-            # cv2.rectangle(output_frame, (x1, y1), (x2, y2), box_color, 2)
+            # Draw bounding box (yellow if highlighted, green otherwise)
+            box_color = (0, 255, 255) # if is_highlighted else (0, 255, 0)
+            cv2.rectangle(output_frame, (x1, y1), (x2, y2), box_color, 2)
 
             # Display class name and confidence
             vehicle_type = class_names[cls_id]
