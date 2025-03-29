@@ -207,6 +207,7 @@ class CameraDisplay:
                                     r, g, b = 1.0, 0.0, 0.0
 
                             # Create colors with the determined RGB values
+                            white_color = imgui.get_color_u32_rgba(1.0, 1.0, 1.0, 1.0)
                             mine_color = imgui.get_color_u32_rgba(r, g, b, 1.0)
                             fill_color = imgui.get_color_u32_rgba(r, g, b, 0.5)  # Semi-transparent
 
@@ -230,7 +231,7 @@ class CameraDisplay:
                             draw_list.add_text(
                                 screen_x + marker_size + 2,
                                 screen_y - marker_size - 2,
-                                mine_color,
+                                white_color,
                                 f"Mine {i+1}"
                             )
                     except Exception as e:
@@ -289,12 +290,12 @@ class CameraDisplay:
                     point_idx = self.state.waiting_for_camera2_point
                     self.state.set_camera_point(2, point_idx, frame_x, frame_y)
                     print(f"Set Camera 2 Point {point_idx+1} to ({frame_x}, {frame_y})")
-                    
+
                 # Check if we're waiting to set a POI position (allow POI setting from camera view)
                 elif self.state.waiting_for_poi_point >= 0:
                     # Convert camera coordinates to field coordinates
                     field_position = self.state.camera_to_field_position(frame_x, frame_y)
-                    
+
                     if field_position:
                         # Set the POI position
                         point_idx = self.state.waiting_for_poi_point
