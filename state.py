@@ -15,11 +15,7 @@ class State:
         self.camera_list = camera_list
 
         # Camera selection
-        self.selected_camera1 = 0
-        self.selected_camera2 = 0
-
         self.camera1_points = []
-        self.camera2_points = []
 
         self.reset_config()
 
@@ -48,7 +44,6 @@ class State:
         self.load_config()
 
         self.camera1_quad = Quad(self.camera1_points)
-        self.camera2_quad = Quad(self.camera2_points)
 
 
     def set_c1_cursor(self, c):
@@ -97,12 +92,6 @@ class State:
         """Get the selected camera1 ID"""
         if self.selected_camera1 < len(self.camera_list):
             return self.camera_list[self.selected_camera1][0]
-        return None
-
-    def get_camera2_id(self):
-        """Get the selected camera2 ID"""
-        if self.selected_camera2 < len(self.camera_list):
-            return self.camera_list[self.selected_camera2][0]
         return None
 
     def set_poi_position(self, index, x, y):
@@ -241,14 +230,10 @@ class State:
             # Load camera selection
             if 'selected_camera1' in config:
                 self.selected_camera1 = config['selected_camera1']
-            if 'selected_camera2' in config:
-                self.selected_camera2 = config['selected_camera2']
 
             # Load camera points
             if 'camera1_points' in config:
                 self.camera1_points = config['camera1_points']
-            if 'camera2_points' in config:
-                self.camera2_points = config['camera2_points']
 
             # Load field size
             if 'field_size' in config:
@@ -276,8 +261,6 @@ class State:
         """Reset configuration to default values"""
         # Reset camera points
         self.camera1_points = [[0, 0] for _ in range(4)]
-        self.camera2_points = [[0, 0] for _ in range(4)]
-
         self.field_size = [100, 300]
 
         # POI positions in field coordinates (previously normalized 0-1)

@@ -58,7 +58,10 @@ class CameraDisplay:
 
         point_x, point_y = self.get_mouse_in_image_space()
 
-        f_x, f_y = self.state.camera1_quad.point_to_field(point_x, point_y)
+        ret = self.state.camera1_quad.point_to_field(point_x, point_y)
+        if ret is None:
+            return 0,0
+        f_x, f_y = ret
 
         # Scale to image space based on current zoom level
         return (f_x, f_y)
@@ -856,6 +859,34 @@ class ControlPanel:
             if imgui.button("Reload Config"):
                 self.state.load_config()
                 print("Configuration reloaded from file")
+
+            imgui.same_line()
+            if imgui.button("Config 1"):
+                try:
+                    # Copy camera_1.json to config.json
+                    with open("config_1.json", 'r') as src_file:
+                        config_data = src_file.read()
+                    with open("config.json", 'w') as dest_file:
+                        dest_file.write(config_data)
+                    # Reload the config
+                    self.state.load_config()
+                    print("Configuration 1 loaded successfully")
+                except Exception as e:
+                    print(f"Error loading configuration 1: {e}")
+
+            imgui.same_line()
+            if imgui.button("Config 2"):
+                try:
+                    # Copy camera_2.json to config.json
+                    with open("config_2.json", 'r') as src_file:
+                        config_data = src_file.read()
+                    with open("config.json", 'w') as dest_file:
+                        dest_file.write(config_data)
+                    # Reload the config
+                    self.state.load_config()
+                    print("Configuration 2 loaded successfully")
+                except Exception as e:
+                    print(f"Error loading configuration 2: {e}")
 
             imgui.same_line()
             if imgui.button("Reset to Defaults"):
