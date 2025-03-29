@@ -77,7 +77,9 @@ class CameraDisplay:
         # Get window position (needed for mouse position calculation)
         self.window_pos_x, self.window_pos_y = imgui.get_window_position()
 
-        # Get cursor position (for content region position)
+        # Get content region position in absolute screen coordinates
+        # This is the upper-left corner of where the content starts
+        # This automatically updates when the window moves
         cursor_pos_x, cursor_pos_y = imgui.get_cursor_screen_pos()
 
         self.mouse_x, self.mouse_y = imgui.get_io().mouse_pos
@@ -91,7 +93,8 @@ class CameraDisplay:
         default_height = default_width / aspect_ratio
         imgui.set_next_window_size(default_width, default_height, imgui.FIRST_USE_EVER)
 
-        imgui.begin("Camnera 1")
+        # Begin the camera window - title fixed from "Camnera 1"
+        imgui.begin("Camera 1")
         if tex_id:
 
             # Get available width and height of the ImGui window content area
@@ -107,6 +110,7 @@ class CameraDisplay:
             # Draw the image
             imgui.image(tex_id, display_width, display_height)
 
+            # Get the window draw list to ensure drawing is relative to the current window
             draw_list = imgui.get_window_draw_list()
 
             # Function to draw quad for a camera
@@ -153,6 +157,8 @@ class CameraDisplay:
                         if camera_coords:
                             cam_x, cam_y = camera_coords
                             # Scale to display coordinates
+                            # cursor_pos_x/y from get_cursor_screen_pos() already includes window position
+                            # so this will move correctly when the window moves
                             screen_x = cursor_pos_x + (cam_x * scale_x)
                             screen_y = cursor_pos_y + (cam_y * scale_y)
 
@@ -248,6 +254,7 @@ class CameraDisplay:
                     cursor_pos_y <= mouse_y <= cursor_pos_y + display_height):
 
                     # Draw vertical line
+                    # Get a fresh draw list to ensure proper window-relative coordinates
                     draw_list = imgui.get_window_draw_list()
                     draw_list.add_line(
                         mouse_x, cursor_pos_y,
@@ -648,12 +655,41 @@ class ControlPanel:
                 # Signal that camera source needs to be reinitialized
                 reinit_camera = True
 
-            changed2, self.state.selected_camera2 = imgui.combo(
-                "Camera 2", self.state.selected_camera2, [c[1] for c in self.state.camera_list]
-            )
-            if changed2:
-                self.state.save_config()
+            # changed2, self.state.selected_camera2 = imgui.combo(
+            #     "Camera 2", self.state.selected_camera2, [c[1] for c in self.state.camera_list]
+            # )
+            # if changed2:
+            #     self.state.save_config()
             imgui.separator()
+
+
+            # Processing Control
+            imgui.text("Processing Control")
+
+            # Add the pause processing button
+            if self.state.processing_paused:
+                if imgui.button("Resume Processing", width=150, height=0):
+                    self.state.processing_paused = False
+                    self.state.save_config()
+                    print("Processing resumed")
+                # Add indicator text when paused
+                imgui.same_line()
+                imgui.text_colored("PAUSED", 1, 0.5, 0, 1)
+            else:
+                if imgui.button("Pause Processing", width=150, height=0):
+                    self.state.processing_paused = True
+                    self.state.save_config()
+                    print("Processing paused")
+
+            # Add a tooltip to explain what pausing does
+            if imgui.is_item_hovered():
+                imgui.begin_tooltip()
+                imgui.text("Pause/resume YOLO and detector processing.")
+                imgui.text("Video will continue to update when paused.")
+                imgui.end_tooltip()
+
+            imgui.separator()
+
 
             imgui.text("Field Size")
             changed_width, self.state.field_size[0] = imgui.input_int(
@@ -815,39 +851,12 @@ class ControlPanel:
 
             imgui.separator()
 
-            # Processing Control
-            imgui.text("Processing Control")
-
-            # Add the pause processing button
-            if self.state.processing_paused:
-                if imgui.button("Resume Processing", width=150, height=0):
-                    self.state.processing_paused = False
-                    self.state.save_config()
-                    print("Processing resumed")
-                # Add indicator text when paused
-                imgui.same_line()
-                imgui.text_colored("PAUSED", 1, 0.5, 0, 1)
-            else:
-                if imgui.button("Pause Processing", width=150, height=0):
-                    self.state.processing_paused = True
-                    self.state.save_config()
-                    print("Processing paused")
-
-            # Add a tooltip to explain what pausing does
-            if imgui.is_item_hovered():
-                imgui.begin_tooltip()
-                imgui.text("Pause/resume YOLO and detector processing.")
-                imgui.text("Video will continue to update when paused.")
-                imgui.end_tooltip()
-
-            imgui.separator()
-
             # Config Management
             imgui.text("Configuration")
             if imgui.button("Reload Config"):
                 self.state.load_config()
                 print("Configuration reloaded from file")
-            
+
             imgui.same_line()
             if imgui.button("Reset to Defaults"):
                 if imgui.begin_popup_modal("Confirm Reset", True):
@@ -969,9 +978,6 @@ def process_frame_with_yolo(source, model, quad, conf_threshold=0.25, highlighte
 
     old_gray = frame_gray
 
-    #frame = cv2.cvtColor(frame_gray,cv2.COLOR_GRAY2RGB)
-
-
     # YOLOv8 class names (COCO dataset)
     class_names = model.names
 
@@ -980,7 +986,6 @@ def process_frame_with_yolo(source, model, quad, conf_threshold=0.25, highlighte
 
     # Get model prediction on the resized frame
     results = model.predict(frame, imgsz=1920, conf=conf_threshold)[0]
-
 
     polygon = np.array(quad)
     polygon_zone = sv.PolygonZone(polygon=polygon)
@@ -998,7 +1003,6 @@ def process_frame_with_yolo(source, model, quad, conf_threshold=0.25, highlighte
     annotated_image = mask_annotator.annotate(
         scene=of_frame.copy(), detections=detections)
     output_frame = annotated_image
-
 
     # List to store car detections (for click detection later)
     car_detections = []
@@ -1022,25 +1026,11 @@ def process_frame_with_yolo(source, model, quad, conf_threshold=0.25, highlighte
         center_x = (x1 + x2) // 2
         center_y = (y1 + y2) // 2
 
+
         # Check if the detected object is a vehicle
         if cls_id in vehicle_classes:
             # Store detection data for later use
             car_detections.append([x1, y1, x2, y2, conf, cls_id])
-
-            # # Check if this is the highlighted car
-            # is_highlighted = False
-            # if highlighted_car is not None:
-            #     hx1, hy1, hx2, hy2, _, _ = highlighted_car
-            #     # Check if this is approximately the same detection
-            #     overlap_threshold = 0.7  # Adjust if needed
-            #     # Check that the centers are close to each other
-            #     h_center_x = (hx1 + hx2) // 2
-            #     h_center_y = (hy1 + hy2) // 2
-
-            #     # Check if centers are within a small distance
-            #     distance = np.sqrt((center_x - h_center_x)**2 + (center_y - h_center_y)**2)
-            #     if distance < 30:  # Adjust threshold as needed
-            #         is_highlighted = True
 
             # Draw bounding box (yellow if highlighted, green otherwise)
             box_color = (0, 255, 255) # if is_highlighted else (0, 255, 0)
