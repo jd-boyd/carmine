@@ -210,7 +210,8 @@ class State:
                 'camera1_points': self.camera1_points,
                 'camera2_points': self.camera2_points,
                 'field_size': self.field_size,
-                'poi_positions': self.poi_positions
+                'poi_positions': self.poi_positions,
+                'poi_ranges': self.poi_ranges,
             }
 
             with open(PRIMARY_CONFIG_FILE, 'w') as f:
@@ -258,6 +259,8 @@ class State:
                 if len(self.poi_positions) > 9:
                     self.poi_positions = self.poi_positions[0:9]
 
+            if 'poi_ranges' in config:
+                self.poi_ranges = config['poi_ranges']
 
             print(f"Configuration loaded from {config_file}")
 
@@ -281,6 +284,9 @@ class State:
             (32, 90), (80, 150), (128, 210), (48, 240), (112, 60),
             (16, 270), (144, 30), (64, 180), (96, 120)
         ]
+
+        self.poi_ranges = [45, 15, 3]
+
 
     def calculate_poi_distances(self, car_index=0):
         """

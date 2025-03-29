@@ -192,7 +192,7 @@ class CameraDisplay:
                                 screen_x + marker_size, screen_y + marker_size,  # bottom right vertex
                                 mine_color, 2.0  # outline width
                             )
-                            
+
                             # Add filled triangle with semi-transparency
                             fill_color = imgui.get_color_u32_rgba(1, 0, 0, 0.5)  # semi-transparent red
                             draw_list.add_triangle_filled(
@@ -463,7 +463,7 @@ class FieldVisualization:
                 marker_size = 5.0
                 # Use different color for the POI we're currently setting
                 color = imgui.get_color_u32_rgba(1, 1, 0, 1) if i == self.state.waiting_for_poi_point else imgui.get_color_u32_rgba(1, 0, 0, 1)
-                
+
                 # Draw triangle outline (pointing upward)
                 draw_list.add_triangle(
                     poi_x, poi_y - marker_size,               # top vertex
@@ -471,12 +471,12 @@ class FieldVisualization:
                     poi_x + marker_size, poi_y + marker_size,  # bottom right vertex
                     color, 2.0  # outline width
                 )
-                
+
                 # Add filled triangle with semi-transparency
                 fill_color = imgui.get_color_u32_rgba(
-                    1, 
-                    1 if i == self.state.waiting_for_poi_point else 0, 
-                    0, 
+                    1,
+                    1 if i == self.state.waiting_for_poi_point else 0,
+                    0,
                     0.5  # semi-transparent
                 )
                 draw_list.add_triangle_filled(
@@ -692,6 +692,19 @@ class ControlPanel:
                         self.state.waiting_for_camera1_point = -1
                         self.state.waiting_for_camera2_point = -1
                         print(f"Click on the field visualization to set POI {i+1}")
+
+            imgui.separator()
+
+            imgui.text("PoI Ranges")
+            for i in range(len(self.state.poi_ranges)):
+
+                changed_width, self.state.poi_ranges[i] = imgui.input_int(
+                    "Width", self.state.poi_ranges[i]
+                )
+
+                if changed_width:
+                    self.state.save_config()
+
 
             imgui.separator()
 
