@@ -25,7 +25,7 @@ class CameraDisplay:
     # The there are several relevent coordinate systems in this window.
     # The is the screen space point in the window. (initially 640x360)
     # There is the image space point in the window (probably 1920x1080)
-    # Third, there is the UV space (0,0) to (1,1), for items in the field box.
+    # There is field space, which maps the field box to a known size (initially 160x300)
     # Also drawing in the window is relative to the parent,so:
     #   draw_point = point_in_window + window_position
 
@@ -52,13 +52,6 @@ class CameraDisplay:
         return (int(mouse_window_x * self.scale),
                 int(mouse_window_y * self.scale))
 
-    def get_mouse_in_uv_space(self):
-        pt = self.get_mouse_in_image_space()
-        return self.state.camera1_quad.point_to_uv(pt[0], pt[1])
-
-
-    def uv_to_window_space(self):
-        pass
 
     def draw(self):
         """
@@ -104,35 +97,6 @@ class CameraDisplay:
             imgui.image(tex_id, display_width, display_height)
 
             draw_list = imgui.get_window_draw_list()
-
-            # for car_det in self.state.car_detections:
-            #     hx1, hy1, hx2, hy2, _, _ = car_det #self.state.car_detections[0]
-            #     hx1 /= self.scale
-            #     hy1 /= self.scale
-            #     hx2 /= self.scale
-            #     hy2 /= self.scale
-            #     # Check if this is approximately the same detection
-            #     overlap_threshold = 0.7  # Adjust if needed
-            #     # Check that the centers are close to each other
-            #     h_center_x = (hx1 + hx2) // 2
-            #     h_center_y = (hy1 + hy2) // 2
-
-            #     x_nudge, y_nudge = 20, 20
-
-            #     # Draw field outline with thicker border
-            #     draw_list.add_rect(
-            #         self.window_pos_x+hx1+x_nudge, self.window_pos_y+hy1+y_nudge,
-            #         self.window_pos_x+hx2+x_nudge, self.window_pos_y+hy2+y_nudge,
-
-            #         imgui.get_color_u32_rgba(0, 1, 1, 1),
-            #         0, 2.0  # No rounding, 2px thickness
-            #     )
-
-            # Check if centers are within a small distance
-            # distance = np.sqrt((center_x - h_center_x)**2 + (center_y - h_center_y)**2)
-            # if distance < 30:  # Adjust threshold as needed
-            #     is_highlighted = True
-
 
             # Function to draw quad for a camera
             def draw_camera_quad(points, color):
@@ -181,10 +145,60 @@ class CameraDisplay:
                             screen_x = cursor_pos_x + (cam_x * scale_x)
                             screen_y = cursor_pos_y + (cam_y * scale_y)
 
-                            # Draw a red triangle marker for each POI
+                            # Determine mine color based on nearest car distance
                             marker_size = 10.0
-                            mine_color = imgui.get_color_u32_rgba(1, 0, 0, 1)  # Red
-
+                            
+                            # Default color (red) if no cars or can't calculate distance
+                            r, g, b = 1.0, 0.0, 0.0  # Default to red
+                            
+                            # Try to find the minimum distance from any car to this POI
+                            min_distance = float('inf')
+                            
+                            # Calculate distances if we have cars
+                            if self.state.car_field_positions:
+                                # Get POI position
+                                poi_x, poi_y = self.state.poi_positions[i]
+                                
+                                # Check each car's distance to this POI
+                                for car_x, car_y in self.state.car_field_positions:
+                                    # Calculate Euclidean distance
+                                    dist = ((car_x - poi_x)**2 + (car_y - poi_y)**2)**0.5
+                                    min_distance = min(min_distance, dist)
+                            
+                            # Set color based on POI ranges (use first 3 values if available)
+                            # Green: beyond the safe distance
+                            # Yellow: in caution zone
+                            # Red: in danger zone
+                            if min_distance != float('inf'):
+                                # Get thresholds from poi_ranges
+                                if len(self.state.poi_ranges) >= 3:
+                                    safe_distance = self.state.poi_ranges[0]
+                                    caution_distance = self.state.poi_ranges[1] 
+                                    danger_distance = self.state.poi_ranges[2]
+                                else:
+                                    # Default values if not enough ranges defined
+                                    safe_distance = 45
+                                    caution_distance = 15
+                                    danger_distance = 3
+                                
+                                # Set color based on distance thresholds
+                                if min_distance > safe_distance:
+                                    # Green - safe
+                                    r, g, b = 0.0, 1.0, 0.0
+                                elif min_distance > caution_distance:
+                                    # Yellow - caution
+                                    r, g, b = 1.0, 1.0, 0.0
+                                elif min_distance > danger_distance:
+                                    # Orange - approaching danger
+                                    r, g, b = 1.0, 0.5, 0.0
+                                else:
+                                    # Red - danger
+                                    r, g, b = 1.0, 0.0, 0.0
+                            
+                            # Create colors with the determined RGB values
+                            mine_color = imgui.get_color_u32_rgba(r, g, b, 1.0)
+                            fill_color = imgui.get_color_u32_rgba(r, g, b, 0.5)  # Semi-transparent
+                            
                             # Draw triangle (pointing upward)
                             draw_list.add_triangle(
                                 screen_x, screen_y - marker_size,               # top vertex
@@ -194,7 +208,6 @@ class CameraDisplay:
                             )
 
                             # Add filled triangle with semi-transparency
-                            fill_color = imgui.get_color_u32_rgba(1, 0, 0, 0.5)  # semi-transparent red
                             draw_list.add_triangle_filled(
                                 screen_x, screen_y - marker_size,               # top vertex
                                 screen_x - marker_size, screen_y + marker_size,  # bottom left vertex
@@ -459,26 +472,55 @@ class FieldVisualization:
                 poi_x = canvas_pos_x + ((1-norm_x) * canvas_width)  # 1-norm_x to flip horizontally
                 poi_y = canvas_pos_y + (norm_y * canvas_height)
 
-                # Draw triangle marker
+                # Determine marker color based on car proximity
                 marker_size = 5.0
-                # Use different color for the POI we're currently setting
-                color = imgui.get_color_u32_rgba(1, 1, 0, 1) if i == self.state.waiting_for_poi_point else imgui.get_color_u32_rgba(1, 0, 0, 1)
-
-                # Draw triangle outline (pointing upward)
-                draw_list.add_triangle(
-                    poi_x, poi_y - marker_size,               # top vertex
-                    poi_x - marker_size, poi_y + marker_size,  # bottom left vertex
-                    poi_x + marker_size, poi_y + marker_size,  # bottom right vertex
-                    color, 2.0  # outline width
-                )
-
-                # Add filled triangle with semi-transparency
-                fill_color = imgui.get_color_u32_rgba(
-                    1,
-                    1 if i == self.state.waiting_for_poi_point else 0,
-                    0,
-                    0.5  # semi-transparent
-                )
+                
+                # Default color - red or yellow if waiting for POI point
+                r, g, b = 1.0, 1.0 if i == self.state.waiting_for_poi_point else 0.0, 0.0
+                
+                # If we're not setting this POI, use distance-based coloring
+                if i != self.state.waiting_for_poi_point:
+                    # Try to find the minimum distance from any car to this POI
+                    min_distance = float('inf')
+                    
+                    # Calculate distances if we have cars
+                    if self.state.car_field_positions:
+                        # Check each car's distance to this POI
+                        for car_x, car_y in self.state.car_field_positions:
+                            # Calculate Euclidean distance
+                            dist = ((car_x - field_x)**2 + (car_y - field_y)**2)**0.5
+                            min_distance = min(min_distance, dist)
+                    
+                    # Set color based on POI ranges thresholds
+                    if min_distance != float('inf'):
+                        # Get thresholds from poi_ranges
+                        if len(self.state.poi_ranges) >= 3:
+                            safe_distance = self.state.poi_ranges[0]
+                            caution_distance = self.state.poi_ranges[1] 
+                            danger_distance = self.state.poi_ranges[2]
+                        else:
+                            # Default values if not enough ranges defined
+                            safe_distance = 45
+                            caution_distance = 15
+                            danger_distance = 3
+                        
+                        # Set color based on distance thresholds (same logic as in camera view)
+                        if min_distance > safe_distance:
+                            # Green - safe
+                            r, g, b = 0.0, 1.0, 0.0
+                        elif min_distance > caution_distance:
+                            # Yellow - caution
+                            r, g, b = 1.0, 1.0, 0.0
+                        elif min_distance > danger_distance:
+                            # Orange - approaching danger
+                            r, g, b = 1.0, 0.5, 0.0
+                        else:
+                            # Red - danger
+                            r, g, b = 1.0, 0.0, 0.0
+                
+                # Create colors with the determined RGB values
+                color = imgui.get_color_u32_rgba(r, g, b, 1.0)
+                fill_color = imgui.get_color_u32_rgba(r, g, b, 0.5)  # Semi-transparent
                 draw_list.add_triangle_filled(
                     poi_x, poi_y - marker_size,               # top vertex
                     poi_x - marker_size, poi_y + marker_size,  # bottom left vertex
@@ -746,10 +788,10 @@ class ControlPanel:
                 imgui.text("No cars detected")
 
             imgui.separator()
-            
+
             # Processing Control
             imgui.text("Processing Control")
-            
+
             # Add the pause processing button
             if self.state.processing_paused:
                 if imgui.button("Resume Processing", width=150, height=0):
@@ -764,14 +806,14 @@ class ControlPanel:
                     self.state.processing_paused = True
                     self.state.save_config()
                     print("Processing paused")
-            
+
             # Add a tooltip to explain what pausing does
             if imgui.is_item_hovered():
                 imgui.begin_tooltip()
                 imgui.text("Pause/resume YOLO and detector processing.")
                 imgui.text("Video will continue to update when paused.")
                 imgui.end_tooltip()
-                
+
             imgui.separator()
 
             # Config Management
@@ -1070,7 +1112,7 @@ def main():
 
             # Get a fresh frame from the source
             frame = source_1.get_frame()
-            
+
             # Only run YOLO processing if not paused
             if not app_state.processing_paused:
                 processed_frame, car_detections = process_frame_with_yolo(source_1, model,
@@ -1081,7 +1123,7 @@ def main():
             else:
                 # When paused, just use the raw frame without processing
                 processed_frame = frame
-            
+
             # Always update texture with the current frame (processed or raw)
             sources.update_opengl_texture(source_1.get_texture_id(), processed_frame)
             # Draw the camera view using the CameraDisplay class

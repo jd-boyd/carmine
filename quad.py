@@ -17,7 +17,7 @@ class Quad:
             quad_points (list): List of four (x,y) tuples defining the quadrilateral vertices
                                in counter-clockwise order, starting from top-left:
                                [(x1,y1), (x2,y2), (x3,y3), (x4,y4)]
-            field_size (list): The field dimensions [width, height] to use for field coordinate 
+            field_size (list): The field dimensions [width, height] to use for field coordinate
                               transformations. Defaults to [160, 300].
         """
         if len(quad_points) != 4:
@@ -25,10 +25,12 @@ class Quad:
 
         self.quad_points = quad_points
         self.uv_coords = [(0,0), (0,1), (1,1), (1,0)]
+        self.field_coords = [(0,0), (0,field_size[1]), (field_size[0],field_size[1]), (field_size[0],0)]
         self.field_size = field_size
 
         self.src_points = np.array(self.quad_points, dtype=np.float32)
-        self.dst_points = np.array(self.uv_coords, dtype=np.float32)
+        self.uv_points = np.array(self.uv_coords, dtype=np.float32)
+        self.field_points = np.array(self.field_coords, dtype=np.float32)
 
         self._calculate_transform_matrix()
 
@@ -37,7 +39,9 @@ class Quad:
 
         # Calculate the homography matrix using cv2.findHomography
         # RANSAC method helps eliminate outliers
-        self.H, _ = cv2.findHomography(self.src_points, self.dst_points, cv2.RANSAC, 5.0)
+        self.H, _ = cv2.findHomography(self.src_points, self.uv_points, cv2.RANSAC, 5.0)
+
+        self.Hf, _ = cv2.findHomography(self.src_points, self.field_points, cv2.RANSAC, 5.0)
 
 
     def point_to_uv(self, point_x, point_y):
@@ -104,15 +108,16 @@ class Quad:
             return None
 
         return (x, y)
-        
+
+
     def point_to_field(self, point_x, point_y):
         """
         Convert a point in image space to field coordinates inside the quadrilateral.
-        
+
         Args:
             point_x (float): X-coordinate of the point in image space
             point_y (float): Y-coordinate of the point in image space
-            
+
         Returns:
             tuple: (field_x, field_y) coordinates in field space (typically 0,0 to field_size)
                   or None if the transform is invalid or division by zero occurs
@@ -121,22 +126,22 @@ class Quad:
         uv = self.point_to_uv(point_x, point_y)
         if uv is None:
             return None
-            
+
         # Then scale UV to field dimensions
         u, v = uv
         field_x = u * self.field_size[0]
         field_y = v * self.field_size[1]
-        
+
         return (field_x, field_y)
-        
+
     def field_to_point(self, field_x, field_y):
         """
         Convert field coordinates back to a point in image space.
-        
+
         Args:
             field_x (float): X-coordinate in field space
             field_y (float): Y-coordinate in field space
-            
+
         Returns:
             tuple: (x, y) coordinates of the point in image space
                   or None if the transform is invalid or division by zero occurs
@@ -144,6 +149,6 @@ class Quad:
         # Convert field coordinates to UV
         u = field_x / self.field_size[0]
         v = field_y / self.field_size[1]
-        
+
         # Then convert UV to image coordinates
         return self.uv_to_point(u, v)
