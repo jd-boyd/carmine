@@ -109,9 +109,10 @@ class TestQuadClass(unittest.TestCase):
             self.assertAlmostEqual(p1[1], p2[1], delta=0.1)
 
         # Test with a delta since floating point calculations might not be exact
-        for i, uv in enumerate([(0,0), (0,1), (1,1), (1,0)]):
+        uv_points = [(0,0), (0,1), (1,1), (1,0)]
+        for i in range(4):
             result = quad.point_to_uv(*quad_points[i])
-            pairAssert(result, uv[i])
+            pairAssert(result, uv_points[i])
 
 
     def test_uv_to_point_roundtrip(self):

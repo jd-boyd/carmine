@@ -11,6 +11,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # Import state module
 import state
 from state import State
+from quad import Quad
 
 class TestState(unittest.TestCase):
     def setUp(self):
@@ -19,10 +20,10 @@ class TestState(unittest.TestCase):
         self.temp_config.close()  # Close the file so it can be reopened on Windows
 
         # Store the original config file path
-        self.original_config_file = state.CONFIG_FILE
+        self.original_primary_config_file = state.PRIMARY_CONFIG_FILE
 
         # Override the CONFIG_FILE value temporarily
-        state.CONFIG_FILE = self.temp_config.name
+        state.PRIMARY_CONFIG_FILE = self.temp_config.name
 
         # Mock camera list for testing
         self.camera_list = [(0, "Camera 0"), (1, "Camera 1")]
@@ -32,7 +33,7 @@ class TestState(unittest.TestCase):
 
     def tearDown(self):
         # Clean up the temporary config file
-        state.CONFIG_FILE = self.original_config_file
+        state.PRIMARY_CONFIG_FILE = self.original_primary_config_file
         if os.path.exists(self.temp_config.name):
             try:
                 os.unlink(self.temp_config.name)
@@ -67,7 +68,7 @@ class TestState(unittest.TestCase):
 
         # Test POI positions
         self.assertEqual(len(self.state.poi_positions), 10)
-        self.assertEqual(self.state.poi_positions[0], (0.2, 0.3))
+        self.assertEqual(self.state.poi_positions[0], (32, 90))
 
     def test_camera_point_management(self):
         """Test setting and getting camera points"""
@@ -93,12 +94,12 @@ class TestState(unittest.TestCase):
     def test_poi_management(self):
         """Test setting and getting POI positions"""
         # Test setting POI position
-        self.state.set_poi_position(1, 0.4, 0.7)
-        self.assertEqual(self.state.poi_positions[1], (0.4, 0.7))
+        self.state.set_poi_position(1, 64, 210)
+        self.assertEqual(self.state.poi_positions[1], (64, 210))
         self.assertEqual(self.state.waiting_for_poi_point, -1)
 
         # Test with invalid index
-        self.state.set_poi_position(10, 0.1, 0.1)
+        self.state.set_poi_position(10, 16, 30)
         self.assertEqual(len(self.state.poi_positions), 10)
 
     def test_config_save_load(self):
@@ -107,7 +108,7 @@ class TestState(unittest.TestCase):
         self.state.selected_camera1 = 1
         self.state.camera1_points[0] = [100, 200]
         self.state.field_size = [200, 350]
-        self.state.poi_positions[1] = (0.4, 0.7)
+        self.state.poi_positions[1] = (80, 245)
 
         # Save config
         self.state.save_config()
@@ -122,8 +123,8 @@ class TestState(unittest.TestCase):
 
         # The tuple might be converted to a list during JSON serialization
         # So check values individually
-        self.assertAlmostEqual(new_state.poi_positions[1][0], 0.4)
-        self.assertAlmostEqual(new_state.poi_positions[1][1], 0.7)
+        self.assertAlmostEqual(new_state.poi_positions[1][0], 80)
+        self.assertAlmostEqual(new_state.poi_positions[1][1], 245)
 
     def test_reset_config(self):
         """Test resetting configuration to defaults"""
@@ -131,7 +132,7 @@ class TestState(unittest.TestCase):
         self.state.selected_camera1 = 1
         self.state.camera1_points[0] = [100, 200]
         self.state.field_size = [200, 350]
-        self.state.poi_positions[1] = (0.4, 0.7)
+        self.state.poi_positions[1] = (64, 210)
 
         # Reset config
         self.state.reset_config()
@@ -141,25 +142,31 @@ class TestState(unittest.TestCase):
         self.assertEqual(self.state.field_size, [160, 300])
 
         # Check POI position values individually
-        self.assertAlmostEqual(self.state.poi_positions[1][0], 0.5)
-        self.assertAlmostEqual(self.state.poi_positions[1][1], 0.5)
+        self.assertAlmostEqual(self.state.poi_positions[1][0], 80)
+        self.assertAlmostEqual(self.state.poi_positions[1][1], 150)
 
     def test_highlight_car(self):
         """Test highlighting a car and calculating field position"""
         # Create a car detection
         car_detection = [10, 20, 50, 80, 0.9, 2]  # [x1, y1, x2, y2, conf, cls_id]
 
-        # Highlight the car - it won't actually calculate a field position
-        # in the test since we need a valid Quad, but it should still set the car
+        # Set valid quad points to allow field position calculation
+        self.state.camera1_points = [[0, 0], [0, 100], [100, 100], [100, 0]]
+        
+        # Create a new camera1_quad with valid points
+        self.state.camera1_quad = Quad(self.state.camera1_points)
+
+        # Highlight the car (since we have a valid quad now, this should work)
         self.state.highlight_car(car_detection)
 
         # Verify the car is highlighted
-        self.assertEqual(self.state.highlighted_car, car_detection)
+        self.assertEqual(self.state.highlighted_cars[0], car_detection)
 
-        # Test unhighlighting
-        self.state.highlight_car(None)
-        self.assertIsNone(self.state.highlighted_car)
-        self.assertIsNone(self.state.car_field_position)
+        # Reset the highlighted cars
+        self.state.highlighted_cars = []
+        self.state.car_field_positions = []
+        self.state.highlighted_car = None
+        self.state.car_field_position = None
 
     def test_camera_to_field_position_exists(self):
         """Test that the camera_to_field_position method exists and is callable"""
@@ -174,21 +181,21 @@ class TestState(unittest.TestCase):
         self.assertIsNone(self.state.calculate_poi_distances())
 
         # Test with car position set
-        self.state.car_field_position = (0.5, 0.5)  # Center of field
+        self.state.car_field_position = (50, 50)  # Center of field
         self.state.field_size = [100, 100]  # Make calculations simpler
 
-        # Set POI positions for testing
+        # Set POI positions for testing (now in field coordinates)
         self.state.poi_positions = [
-            (0.0, 0.0),  # Corner - distance should be sqrt(50^2 + 50^2) = ~70.71
-            (1.0, 1.0),  # Opposite corner - same distance
-            (0.5, 0.0),  # Middle of one edge - distance = 50
-            (0.5, 1.0),  # Middle of opposite edge - distance = 50
-            (0.6, 0.6),  # Near the car - distance = sqrt(10^2 + 10^2) = ~14.14
-            (0, 0.5),    # Middle of left edge - distance = 50
-            (0.5, 0.5),  # Same position as car - distance = 0
-            (0.4, 0.4),  # Also near the car
-            (0.9, 0.9),  # Further away
-            (0.1, 0.9)   # Diagonally away
+            (0, 0),     # Corner - distance should be sqrt(50^2 + 50^2) = ~70.71
+            (100, 100), # Opposite corner - same distance
+            (50, 0),    # Middle of one edge - distance = 50
+            (50, 100),  # Middle of opposite edge - distance = 50
+            (60, 60),   # Near the car - distance = sqrt(10^2 + 10^2) = ~14.14
+            (0, 50),    # Middle of left edge - distance = 50
+            (50, 50),   # Same position as car - distance = 0
+            (40, 40),   # Also near the car
+            (90, 90),   # Further away
+            (10, 90)    # Diagonally away
         ]
 
         # Calculate distances

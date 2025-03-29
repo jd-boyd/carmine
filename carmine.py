@@ -168,13 +168,16 @@ class CameraDisplay:
                 scale_y = display_height / self.source.height
 
                 # Go through each POI
-                for i, (poi_x, poi_y) in enumerate(self.state.poi_positions):
-                    # Convert from normalized field coordinates to camera coordinates
+                for i, (field_x, field_y) in enumerate(self.state.poi_positions):
+                    # Convert from field coordinates to normalized UV coordinates
+                    poi_u = field_x / self.state.field_size[0]
+                    poi_v = field_y / self.state.field_size[1]
+                    
                     # Create a quad from the camera points
                     try:
                         quad = self.camera1_quad
-                        # Convert from normalized field coordinates to camera coordinates
-                        camera_coords = quad.uv_to_point(poi_x, poi_y)
+                        # Convert from UV coordinates to camera coordinates
+                        camera_coords = quad.uv_to_point(poi_u, poi_v)
 
                         if camera_coords:
                             cam_x, cam_y = camera_coords
@@ -344,9 +347,13 @@ class FieldVisualization:
             if self.state.c1_cursor_field_position:
                 cursor_x, cursor_y = self.state.c1_cursor_field_position
                 
+                # Normalize cursor coordinates (since they're in field units)
+                norm_cursor_x = cursor_x / self.state.field_size[0]
+                norm_cursor_y = cursor_y / self.state.field_size[1]
+                
                 # Convert to canvas coordinates with horizontal flipping
-                cursor_canvas_x = canvas_pos_x + ((1-cursor_x) * canvas_width)
-                cursor_canvas_y = canvas_pos_y + (cursor_y * canvas_height)
+                cursor_canvas_x = canvas_pos_x + ((1-norm_cursor_x) * canvas_width)
+                cursor_canvas_y = canvas_pos_y + (norm_cursor_y * canvas_height)
                 
                 # Draw cursor as a plus symbol
                 cursor_marker_size = 8.0
@@ -395,10 +402,14 @@ class FieldVisualization:
                     break  # Don't exceed the number of defined colors
 
                 car_x, car_y = car_pos
+                
+                # Normalize the car coordinates (since they're now in field units)
+                norm_car_x = car_x / self.state.field_size[0]
+                norm_car_y = car_y / self.state.field_size[1]
 
                 # Convert to canvas coordinates, flipping horizontally
-                car_canvas_x = canvas_pos_x + ((1-car_x) * canvas_width)  # 1-x to flip horizontally
-                car_canvas_y = canvas_pos_y + (car_y * canvas_height)
+                car_canvas_x = canvas_pos_x + ((1-norm_car_x) * canvas_width)  # 1-x to flip horizontally  
+                car_canvas_y = canvas_pos_y + (norm_car_y * canvas_height)
 
                 # Draw a larger symbol for the car (circle with dot in center)
                 car_marker_size = 7.0
@@ -438,10 +449,14 @@ class FieldVisualization:
                     all_car_distances = [legacy_distances]
 
             # Draw POIs with horizontal flipping
-            for i, (x, y) in enumerate(self.state.poi_positions):
+            for i, (field_x, field_y) in enumerate(self.state.poi_positions):
+                # Normalize the field coordinates to 0-1 range for canvas positioning
+                norm_x = field_x / self.state.field_size[0]
+                norm_y = field_y / self.state.field_size[1]
+                
                 # Calculate pixel position on the canvas, flipping horizontally
-                poi_x = canvas_pos_x + ((1-x) * canvas_width)  # 1-x to flip horizontally
-                poi_y = canvas_pos_y + (y * canvas_height)
+                poi_x = canvas_pos_x + ((1-norm_x) * canvas_width)  # 1-norm_x to flip horizontally
+                poi_y = canvas_pos_y + (norm_y * canvas_height)
 
                 # Draw X marker
                 marker_size = 5.0
@@ -518,10 +533,12 @@ class FieldVisualization:
 
                     # Check if we're waiting to set a POI position
                     if self.state.waiting_for_poi_point >= 0:
-                        # Set the POI position
+                        # Set the POI position in field coordinates
                         point_idx = self.state.waiting_for_poi_point
-                        self.state.set_poi_position(point_idx, norm_x, norm_y)
-                        print(f"Set POI {point_idx+1} to normalized position ({norm_x:.2f}, {norm_y:.2f})")
+                        field_x = norm_x * self.state.field_size[0]
+                        field_y = norm_y * self.state.field_size[1]
+                        self.state.set_poi_position(point_idx, field_x, field_y)
+                        print(f"Set POI {point_idx+1} to field position ({field_x:.1f}, {field_y:.1f})")
 
             # Add some space for the canvas
             imgui.dummy(0, canvas_height + 10)
@@ -678,11 +695,11 @@ class ControlPanel:
 
             imgui.text("Points of Interest")
             for i in range(10):
-                # Get position coordinates
+                # Get position coordinates (now in field units)
                 x, y = self.state.poi_positions[i]
 
-                # Display the current value
-                imgui.text(f"Point {i+1}: ({x:.2f}, {y:.2f})")
+                # Display the current value in field units
+                imgui.text(f"Point {i+1}: ({x:.1f}, {y:.1f})")
 
                 # Indicate if we're waiting for this point to be set
                 if self.state.waiting_for_poi_point == i:
@@ -723,10 +740,7 @@ class ControlPanel:
                     # Show each car's position
                     for i, (car_x, car_y) in enumerate(car_positions):
                         if i < 10:  # Limit to max cars
-                            # Convert to field units
-                            car_x_ft = car_x * self.state.field_size[0]
-                            car_y_ft = car_y * self.state.field_size[1]
-
+                            # Car positions are already in field units now
                             # Use the same colors as in field visualization
                             if i < 10:
                                 r, g, b, a = 0, 0, 0, 0
@@ -744,7 +758,7 @@ class ControlPanel:
                                 # Show colored information for each car
                                 imgui.text_colored(f"Car {i+1}:", r, g, b, 1)
                                 imgui.same_line()
-                                imgui.text(f"({car_x:.2f}, {car_y:.2f}) → ({car_x_ft:.1f}, {car_y_ft:.1f}) units")
+                                imgui.text(f"({car_x:.1f}, {car_y:.1f}) units")
             else:
                 imgui.text("No cars detected")
 

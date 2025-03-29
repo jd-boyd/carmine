@@ -105,15 +105,41 @@ class State:
         return None
 
     def set_poi_position(self, index, x, y):
-        """Set a POI position to the given normalized coordinates (0-1)"""
+        """Set a POI position to the given field coordinates"""
         if 0 <= index < len(self.poi_positions):
             self.poi_positions[index] = (x, y)
             self.waiting_for_poi_point = -1  # Reset waiting state
             self.save_config()
 
+    def field_to_uv(self, field_x, field_y):
+        """
+        Convert field coordinates to UV coordinates (0-1)
+        
+        Args:
+            field_x: X coordinate in field units
+            field_y: Y coordinate in field units
+            
+        Returns:
+            tuple: (u, v) normalized coordinates (0-1)
+        """
+        return (field_x / self.field_size[0], field_y / self.field_size[1])
+    
+    def uv_to_field(self, u, v):
+        """
+        Convert UV coordinates (0-1) to field coordinates
+        
+        Args:
+            u: U coordinate (0-1)
+            v: V coordinate (0-1)
+            
+        Returns:
+            tuple: (x, y) field coordinates
+        """
+        return (u * self.field_size[0], v * self.field_size[1])
+    
     def camera_to_field_position(self, camera_x, camera_y, camera_num=1):
         """
-        Convert a camera point (in pixel coordinates) to field position (normalized coordinates)
+        Convert a camera point (in pixel coordinates) to field position (in field coordinates)
 
         Args:
             camera_x: X coordinate in the camera frame
@@ -121,7 +147,7 @@ class State:
             camera_num: Camera number (1 or 2)
 
         Returns:
-            tuple: (x, y) normalized field coordinates
+            tuple: (x, y) field coordinates
         """
         if camera_num == 1:
             camera_points = self.camera1_points
@@ -142,8 +168,9 @@ class State:
                 print("Could not calculate field position - invalid transformation")
                 return None
 
-            # Return the UV coordinates as our field position
-            return uv
+            # Convert UV to field coordinates
+            field_x, field_y = self.uv_to_field(uv[0], uv[1])
+            return (field_x, field_y)
         except Exception as e:
             print(f"Error converting camera to field position: {e}")
             return None
@@ -167,7 +194,7 @@ class State:
         center_x = (x1 + x2) // 2
         center_y = (y1 + y2) // 2
 
-        # Convert to field position
+        # Convert to field position (already in field coordinates)
         field_position = self.camera_to_field_position(center_x, center_y)
         
         # Add field position to the list
@@ -246,9 +273,10 @@ class State:
 
         self.field_size = [160, 300]
 
+        # POI positions in field coordinates (previously normalized 0-1)
         self.poi_positions = [
-            (0.2, 0.3), (0.5, 0.5), (0.8, 0.7), (0.3, 0.8), (0.7, 0.2),
-            (0.1, 0.9), (0.9, 0.1), (0.4, 0.6), (0.6, 0.4), (0.5, 0.8)
+            (32, 90), (80, 150), (128, 210), (48, 240), (112, 60),
+            (16, 270), (144, 30), (64, 180), (96, 120), (80, 240)
         ]
 
     def calculate_poi_distances(self, car_index=0):
@@ -274,14 +302,8 @@ class State:
         car_x, car_y = car_pos
 
         for i, (poi_x, poi_y) in enumerate(self.poi_positions):
-            # Convert normalized coordinates to actual field dimensions
-            car_field_x = car_x * self.field_size[0]
-            car_field_y = car_y * self.field_size[1]
-            poi_field_x = poi_x * self.field_size[0]
-            poi_field_y = poi_y * self.field_size[1]
-
-            # Calculate Euclidean distance
-            distance = np.sqrt((car_field_x - poi_field_x)**2 + (car_field_y - poi_field_y)**2)
+            # Calculate Euclidean distance directly (since all coordinates are now in field units)
+            distance = np.sqrt((car_x - poi_x)**2 + (car_y - poi_y)**2)
             distances.append((i, distance))
 
         # Sort by distance
