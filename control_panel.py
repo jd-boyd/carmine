@@ -60,7 +60,7 @@ class ControlPanel:
             else:
                 # Camera selection dropdown
                 changed1, self.state.selected_camera1 = imgui.combo(
-                    "Camera 1", self.state.selected_camera1, [c[1] for c in self.state.camera_list]
+                    "Camera", self.state.selected_camera1, [c[1] for c in self.state.camera_list]
                 )
                 if changed1:
                     self.state.save_config()
@@ -319,26 +319,62 @@ class ControlPanel:
 
             imgui.text("Fields")
 
-            # Camera 1 points with display and Set button
+            # Camera 1 points with display, input fields, and Set button
             imgui.text("Camera1 Points:")
+            if imgui.is_item_hovered():
+                imgui.begin_tooltip()
+                imgui.text("These points define the field boundaries in the camera view.")
+                imgui.text("Points should form a quadrilateral in clockwise order:")
+                imgui.text("1: Top-left, 2: Top-right, 3: Bottom-right, 4: Bottom-left")
+                imgui.end_tooltip()
+            
+            # Display camera points in 2x2 grid layout
             for i in range(4):
-                # Display the current value as (x, y)
-                if i % 2:
-                    imgui.same_line()
+                # Start a new row for points 3 and 4
+                if i == 2:
+                    imgui.dummy(0, 5)  # Add a little vertical spacing
+                
+                # Start a new line for points 0 and 2 (first points in each row)
+                if i % 2 == 0:
+                    pass  # Start at the beginning of a new line
+                else:
+                    # For points 1 and 3, add some space after the previous point
+                    imgui.same_line(spacing=50)
+                
+                # Get current coordinates
                 x, y = self.state.camera1_points[i]
-                imgui.text(f"{i+1}: ({x}, {y})")
-
-                # Indicate if we're waiting for this point to be set
-                if self.state.waiting_for_camera1_point == i:
-                    imgui.same_line()
-                    imgui.text_colored("Waiting for click on image...", 1, 0.5, 0, 1)
-
-                # Add Set button
+                    
+                # Display point number
+                imgui.text(f"Pt {i+1}:")
+                
+                # Create input field for X coordinate
                 imgui.same_line()
+                imgui.set_next_item_width(60)  # Set width for X input
+                changed_x, new_x = imgui.input_int(f"X##cam_x_{i}", x)
+                
+                # Create input field for Y coordinate
+                imgui.same_line()
+                imgui.set_next_item_width(60)  # Set width for Y input
+                changed_y, new_y = imgui.input_int(f"Y##cam_y_{i}", y)
+                
+                # Update the point if either value changed
+                if changed_x or changed_y:
+                    # Update with new values
+                    if changed_x:
+                        x = new_x
+                    if changed_y:
+                        y = new_y
+                    
+                    # Update the state with the new position
+                    self.state.set_camera_point(1, i, x, y)
+                    print(f"Updated Camera 1 Point {i+1} position to ({x}, {y})")
 
+                # Add Set button (for clicking to set position)
+                imgui.same_line()
+                
                 # Change button color/text if this is the active point waiting for selection
-                button_text = "Cancel" if self.state.waiting_for_camera1_point == i else "Set"
-                if imgui.button(f"{button_text}##cam1_{i}"):
+                button_text = "Cancel" if self.state.waiting_for_camera1_point == i else "Click"
+                if imgui.button(f"{button_text}##cam1_{i}", width=45):
                     if self.state.waiting_for_camera1_point == i:
                         # Cancel selection mode
                         self.state.waiting_for_camera1_point = -1
@@ -348,6 +384,11 @@ class ControlPanel:
                         # Reset any other waiting state
                         self.state.waiting_for_camera2_point = -1
                         print(f"Click on the image to set Camera 1 Point {i+1}")
+                
+                # Indicate if we're waiting for this point to be set
+                if self.state.waiting_for_camera1_point == i:
+                    imgui.same_line()
+                    imgui.text_colored("Click on image...", 1, 0.5, 0, 1)
 
 
             imgui.separator()
