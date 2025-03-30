@@ -178,6 +178,8 @@ output
 frame_dump
 carmine_config.json
 config.json
+config.sqlite
+
 
 # Ignore vision model files.
 *.pt

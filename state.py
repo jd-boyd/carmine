@@ -2,10 +2,11 @@ import json
 import os
 import numpy as np
 from quad import Quad
+import config_db
 
 # Constants
 PRIMARY_CONFIG_FILE = "config.json"
-LEGACY_CONFIG_FILE = "carmine_config.json"
+CURRENT_CONFIG_NAME = "current"  # Default config name in database
 
 class State:
     """
@@ -16,12 +17,14 @@ class State:
 
         # Camera selection
         self.camera1_points = []
-
+        self.selected_camera1 = 0
         self.reset_config()
+        
+        # Track the currently loaded config name
+        self.current_config_name = CURRENT_CONFIG_NAME
 
         # Point selection state
         self.waiting_for_camera1_point = -1  # Index of point we're waiting to set (-1 means not waiting)
-        self.waiting_for_camera2_point = -1  # Index of point we're waiting to set (-1 means not waiting)
         self.waiting_for_poi_point = -1      # Index of POI we're waiting to set (-1 means not waiting)
 
         # Car tracking - extended to handle multiple cars
@@ -81,9 +84,6 @@ class State:
         if camera_num == 1:
             self.camera1_points[point_index] = [x, y]
             self.waiting_for_camera1_point = -1  # Reset waiting state
-        elif camera_num == 2:
-            self.camera2_points[point_index] = [x, y]
-            self.waiting_for_camera2_point = -1  # Reset waiting state
 
         # Save configuration after updating points
         self.save_config()
@@ -100,6 +100,8 @@ class State:
             self.poi_positions[index] = (x, y)
             self.waiting_for_poi_point = -1  # Reset waiting state
             self.save_config()
+        self.save_config()
+
 
     def field_to_uv(self, field_x, field_y):
         """
@@ -141,8 +143,6 @@ class State:
         """
         if camera_num == 1:
             camera_points = self.camera1_points
-        else:
-            camera_points = self.camera2_points
 
         # Check if we have valid quad points
         if not all(isinstance(p, list) and len(p) == 2 for p in camera_points):
@@ -157,7 +157,7 @@ class State:
             field_position = quad.point_to_field(camera_x, camera_y)
 
             if field_position is None:
-                print("Could not calculate field position - invalid transformation")
+                #print("Could not calculate field position - invalid transformation")
                 return None
 
             return field_position
@@ -191,41 +191,78 @@ class State:
         if field_position is not None:
             self.car_field_positions.append(field_position)
 
-    def save_config(self):
-        """Save the current configuration to the primary JSON file"""
+    def save_config(self, config_name=CURRENT_CONFIG_NAME):
+        """
+        Save the current configuration to the database
+
+        Args:
+            config_name: Name to save the configuration as (defaults to "current")
+
+        Returns:
+            bool: True if saved successfully, False otherwise
+        """
         try:
+            # Get camera info if available
+            camera_name = ""
+            if self.selected_camera1 < len(self.camera_list):
+                camera_name = self.camera_list[self.selected_camera1][1]
+                
             config = {
                 'selected_camera1': self.selected_camera1,
-                'selected_camera2': self.selected_camera2,
+                'camera_name': camera_name,  # Store camera name for display
                 'camera1_points': self.camera1_points,
-                'camera2_points': self.camera2_points,
                 'field_size': self.field_size,
                 'poi_positions': self.poi_positions,
                 'poi_ranges': self.poi_ranges,
+                'c1_show_carbox': self.c1_show_carbox,
+                'c1_show_mines': self.c1_show_mines,
+                'processing_paused': self.processing_paused
             }
 
+            # Save to database
+            success = config_db.save_config_to_db(config_name, config)
+
+            # Also save to file for backwards compatibility
             with open(PRIMARY_CONFIG_FILE, 'w') as f:
                 json.dump(config, f, indent=4)
-            print(f"Configuration saved to {PRIMARY_CONFIG_FILE}")
+
+            # Update current config name if successful
+            if success:
+                self.current_config_name = config_name
+                print(f"Configuration saved to database as '{config_name}'")
+            return success
+
         except Exception as e:
             print(f"Error saving configuration: {e}")
+            return False
 
-    def load_config(self):
-        """Load configuration from a JSON file if it exists"""
+    def load_config(self, config_name=CURRENT_CONFIG_NAME):
+        """
+        Load configuration from the database or file if database config doesn't exist
+
+        Args:
+            config_name: Name of the configuration to load (defaults to "current")
+
+        Returns:
+            bool: True if loaded successfully, False otherwise
+        """
         try:
-            # Try to load the primary config file first
-            if os.path.exists(PRIMARY_CONFIG_FILE):
-                config_file = PRIMARY_CONFIG_FILE
-            # Fall back to legacy config file if primary doesn't exist
-            elif os.path.exists(LEGACY_CONFIG_FILE):
-                config_file = LEGACY_CONFIG_FILE
-                print(f"Using legacy config file: {LEGACY_CONFIG_FILE}")
-            else:
-                print(f"No configuration file found")
-                return
+            # First try to load from database
+            config = config_db.load_config_from_db(config_name)
+            source = f"database ('{config_name}')"
 
-            with open(config_file, 'r') as f:
-                config = json.load(f)
+            # If not found in database, try to load from file
+            if not config and os.path.exists(PRIMARY_CONFIG_FILE):
+                with open(PRIMARY_CONFIG_FILE, 'r') as f:
+                    config = json.load(f)
+                source = f"file ({PRIMARY_CONFIG_FILE})"
+
+                # Save this to database for future use
+                config_db.save_config_to_db(config_name, config)
+
+            if not config:
+                print("No configuration found in database or file")
+                return False
 
             # Load camera selection
             if 'selected_camera1' in config:
@@ -245,17 +282,31 @@ class State:
                 if len(self.poi_positions) > 9:
                     self.poi_positions = self.poi_positions[0:9]
 
+            # Load POI ranges
             if 'poi_ranges' in config:
                 self.poi_ranges = config['poi_ranges']
 
-            print(f"Configuration loaded from {config_file}")
+            # Load UI settings if available
+            if 'c1_show_carbox' in config:
+                self.c1_show_carbox = config['c1_show_carbox']
+            if 'c1_show_mines' in config:
+                self.c1_show_mines = config['c1_show_mines']
+            if 'processing_paused' in config:
+                self.processing_paused = config['processing_paused']
 
-            # If we loaded from legacy file, save to the primary file for future use
-            if config_file == LEGACY_CONFIG_FILE:
-                self.save_config()
-                print(f"Migrated configuration to {PRIMARY_CONFIG_FILE}")
+            # Update current config name to match what was loaded
+            self.current_config_name = config_name
+            
+            print(f"Configuration loaded from {source}")
+
+            # Update quad with new points
+            self.camera1_quad = Quad(self.camera1_points)
+
+            return True
+
         except Exception as e:
             print(f"Error loading configuration: {e}")
+            return False
 
     def reset_config(self):
         """Reset configuration to default values"""

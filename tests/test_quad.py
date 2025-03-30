@@ -153,12 +153,12 @@ class TestQuadClass(unittest.TestCase):
             self.assertAlmostEqual(reverse_result[1], center_point[1], delta=0.1)
             
     def test_point_to_field(self):
-        # Test with default field size (160x300)
+        # Test with default field size (100x300)
         quad_points = [(0, 0), (0, 100), (100, 100), (100, 0)]
         quad = Quad(quad_points)
         
         # Test the four corners
-        expected_field_corners = [(0, 0), (0, 300), (160, 300), (160, 0)]
+        expected_field_corners = [(0, 0), (0, 300), (100, 300), (100, 0)]
         
         for i in range(4):
             result = quad.point_to_field(*quad_points[i])
@@ -168,7 +168,7 @@ class TestQuadClass(unittest.TestCase):
                 
         # Test middle point
         middle_point = (50, 50)
-        expected_field_middle = (80, 150)  # middle of 160x300 field
+        expected_field_middle = (50, 150)  # middle of 100x300 field
         
         result = quad.point_to_field(*middle_point)
         if result is not None:
@@ -176,12 +176,12 @@ class TestQuadClass(unittest.TestCase):
             self.assertAlmostEqual(result[1], expected_field_middle[1], delta=1.0)
             
     def test_field_to_point(self):
-        # Test with default field size (160x300)
+        # Test with default field size (100x300)
         quad_points = [(0, 0), (0, 100), (100, 100), (100, 0)]
         quad = Quad(quad_points)
         
         # Test field corners mapping to quad corners
-        field_corners = [(0, 0), (0, 300), (160, 300), (160, 0)]
+        field_corners = [(0, 0), (0, 300), (100, 300), (100, 0)]
         
         for i in range(4):
             result = quad.field_to_point(*field_corners[i])
@@ -190,7 +190,7 @@ class TestQuadClass(unittest.TestCase):
                 self.assertAlmostEqual(result[1], quad_points[i][1], delta=1.0)
                 
         # Test middle of field
-        field_middle = (80, 150)
+        field_middle = (50, 150)
         expected_point = (50, 50)
         
         result = quad.field_to_point(*field_middle)
