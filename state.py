@@ -48,6 +48,7 @@ class State:
         self.processing_paused = False  # Flag to control YOLO and detector processing
 
         self.car_detections = []  # Raw detections from YOLO
+        self.previous_car_detections = []  # Store previous frame's detections for optical flow prediction
         
         # Cache for POI distance calculations (updated each frame)
         self._poi_car_distances = {}  # Maps POI index to (car_index, distance) tuple
@@ -71,6 +72,8 @@ class State:
             self.c1_cursor_field_position = None
 
     def set_car_detections(self, car_detections):
+        # Store current detections in car_detections and save the previous ones
+        self.previous_car_detections = self.car_detections.copy()
         self.car_detections = car_detections
 
         # Clear previous highlighted cars

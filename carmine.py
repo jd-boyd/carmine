@@ -115,18 +115,17 @@ class CameraDisplay:
                 # Update cursor position in image space
                 self.state.c1_cursor_image_pos = (img_x, img_y)
                 self.state.c1_cursor_in_image = True
-                print(f"Cursor in image: ({img_x}, {img_y})")
+#                print(f"Cursor in image: ({img_x}, {img_y})")
             else:
                 self.state.c1_cursor_image_pos = None
                 self.state.c1_cursor_in_image = False
 
+                # print("Window Pos: ", self.window_pos_x, self.window_pos_y)
+                # print("Mouse Pos: ", self.mouse_x, self.mouse_y)
+                # print("Display: ", display_width, display_height)
+                # print("Window Limit: ", self.window_pos_x + display_width, self.window_pos_y + display_height)
 
-                print("Window Pos: ", self.window_pos_x, self.window_pos_y)
-                print("Mouse Pos: ", self.mouse_x, self.mouse_y)
-                print("Display: ", display_width, display_height)
-                print("Window Limit: ", self.window_pos_x + display_width, self.window_pos_y + display_height)
-
-                print("Cursor not in image")
+                # print("Cursor not in image")
 
         # Set default window size for OpenCV Image window
         default_width = 640
@@ -424,7 +423,8 @@ class FrameProcessor:
         self.old_gray = frame_gray
 
         # Get model prediction
-        results = model.predict(frame, imgsz=1920, conf=conf_threshold)[0]
+        #, imgsz=940
+        results = model.predict(frame, conf=conf_threshold)[0]
 
         # Filter detections within the defined quadrilateral
         polygon = np.array(quad)
@@ -710,7 +710,127 @@ class FrameProcessor:
 
         return enhanced_detections
 
-    def process_and_annotate_frame(self, source, model, quad, conf_threshold=0.25, use_flow=True, draw_quad=True, cursor_pos=None):
+    def predict_disappeared_detections(self, current_detections, previous_detections, flow=None, verbose=None):
+        """
+        Predict positions of detections that disappeared between frames using optical flow
+
+        Args:
+            current_detections: List of current frame detections
+            previous_detections: List of detections from previous frame
+            flow: Optional optical flow data. If None, uses self.flow calculated during processing
+            verbose: Override default verbosity setting
+
+        Returns:
+            List of predicted detections from previous frame that are not in current frame
+        """
+        # Set verbosity
+        if verbose is None:
+            verbose = self.flow_verbose
+
+        if flow is None:
+            flow = self.flow
+
+        if flow is None or not previous_detections:
+            # Return empty list if no flow data or previous detections
+            if verbose:
+                print("No flow data or previous detections available for prediction")
+            return []
+
+        # Get centers of current detections to check for overlaps
+        current_centers = []
+        for det in current_detections:
+            x1, y1, x2, y2 = det[0:4]
+            center_x = (x1 + x2) // 2
+            center_y = (y1 + y2) // 2
+            current_centers.append((center_x, center_y))
+
+        predicted_detections = []
+
+        if verbose:
+            print(f"\n--- Predicting Disappeared Detections ({len(previous_detections)} previous, {len(current_detections)} current) ---")
+
+        # For each previous detection, check if it disappeared
+        for i, det in enumerate(previous_detections):
+            try:
+                # Handle detections with or without flow data
+                if len(det) >= 8:
+                    x1, y1, x2, y2, conf, cls_id, prev_flow_x, prev_flow_y = det
+                    # Include previous flow information
+                    has_previous_flow = True
+                else:
+                    x1, y1, x2, y2, conf, cls_id = det[0:6]
+                    prev_flow_x, prev_flow_y = 0, 0
+                    has_previous_flow = False
+
+                # Get center of this previous detection
+                prev_center_x = (x1 + x2) // 2
+                prev_center_y = (y1 + y2) // 2
+
+                # Check if this detection is already in current detections (within a threshold)
+                detection_exists = False
+                threshold = 30  # Pixel distance threshold to consider as same detection
+
+                for cur_center_x, cur_center_y in current_centers:
+                    dist = ((cur_center_x - prev_center_x)**2 + (cur_center_y - prev_center_y)**2)**0.5
+                    if dist < threshold:
+                        detection_exists = True
+                        break
+
+                # If detection doesn't exist in current frame, use flow to predict new position
+                if not detection_exists:
+                    # Calculate bounding box width and height
+                    width = x2 - x1
+                    height = y2 - y1
+
+                    # Sample optical flow at previous center
+                    h, w = flow.shape[0:2]
+                    if 0 <= prev_center_x < w and 0 <= prev_center_y < h:
+                        # Get flow vector at this position
+                        flow_x = flow[prev_center_y, prev_center_x, 0]
+                        flow_y = flow[prev_center_y, prev_center_x, 1]
+
+                        # If previous detection had flow, average with current flow
+                        if has_previous_flow:
+                            # Weight previous flow less (0.3) than current flow (0.7)
+                            flow_x = 0.7 * flow_x + 0.3 * prev_flow_x
+                            flow_y = 0.7 * flow_y + 0.3 * prev_flow_y
+
+                        # Check if flow magnitude is significant
+                        flow_magnitude = (flow_x**2 + flow_y**2)**0.5
+                        if flow_magnitude > 0.5:  # Only use if flow is significant
+                            # Predict new center
+                            new_center_x = int(prev_center_x + flow_x)
+                            new_center_y = int(prev_center_y + flow_y)
+
+                            # Calculate new bounding box coordinates
+                            new_x1 = int(new_center_x - width/2)
+                            new_y1 = int(new_center_y - height/2)
+                            new_x2 = int(new_center_x + width/2)
+                            new_y2 = int(new_center_y + height/2)
+
+                            # Slightly reduce confidence for predicted detections
+                            new_conf = max(0.1, conf * 0.8)  # Reduce confidence but keep minimum of 0.1
+
+                            # Add to predicted detections with flow data
+                            predicted_det = (new_x1, new_y1, new_x2, new_y2, new_conf, cls_id, flow_x, flow_y)
+                            predicted_detections.append(predicted_det)
+
+                            if verbose:
+                                vehicle_type = "car" if cls_id == 2 else "truck" if cls_id == 7 else f"class_{cls_id}"
+                                print(f"Predicted disappeared {vehicle_type} (prev conf: {conf:.2f}, new: {new_conf:.2f})")
+                                print(f"  Moved from ({prev_center_x}, {prev_center_y}) to ({new_center_x}, {new_center_y})")
+                                print(f"  Flow: ({flow_x:.2f}, {flow_y:.2f}) pixels")
+            except Exception as e:
+                if verbose:
+                    print(f"Error predicting detection #{i}: {e}")
+
+        if verbose:
+            print(f"Added {len(predicted_detections)} predicted detections")
+            print("--- End of Prediction Analysis ---\n")
+
+        return predicted_detections
+
+    def process_and_annotate_frame(self, source, model, quad, conf_threshold=0.25, use_flow=True, draw_quad=True, cursor_pos=None, app_state=None):
         """
         Process a frame and annotate it (convenience method combining the two steps)
 
@@ -722,6 +842,7 @@ class FrameProcessor:
             use_flow: Whether to enhance detections with optical flow
             draw_quad: Whether to draw the quad boundary on the frame
             cursor_pos: Optional cursor position in image space for drawing crosshairs
+            app_state: Optional application state containing previous detections
 
         Returns:
             Tuple of (annotated_frame, car_detections)
@@ -731,6 +852,18 @@ class FrameProcessor:
         # Enhance detections with optical flow if requested
         if use_flow and len(car_detections) > 0:
             car_detections = self.combine_detections_with_flow(car_detections)
+
+        # Check for disappeared detections if we have app_state with previous detections
+        if use_flow and self.flow is not None and app_state and app_state.previous_car_detections:
+            # Predict positions of disappeared objects
+            predicted_detections = self.predict_disappeared_detections(
+                car_detections,
+                app_state.previous_car_detections
+            )
+
+            # Append any predicted detections to our list
+            if predicted_detections:
+                car_detections.extend(predicted_detections)
 
         # Pass quad points and cursor position to annotate_frame
         quad_points = quad if draw_quad else None
@@ -867,7 +1000,8 @@ def main():
                     app_state.camera1_points,
                     use_flow=True,
                     draw_quad=True,  # Draw the quad directly on the frame
-                    cursor_pos=app_state.c1_cursor_image_pos if app_state.c1_cursor_in_image else None
+                    cursor_pos=app_state.c1_cursor_image_pos if app_state.c1_cursor_in_image else None,
+                    app_state=app_state  # Pass app_state to use previous detections for prediction
                 )
                 # Update detections only when processing is active
                 app_state.set_car_detections(car_detections)
