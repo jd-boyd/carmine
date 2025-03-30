@@ -90,6 +90,44 @@ class CameraDisplay:
         self.mouse_x, self.mouse_y = imgui.get_io().mouse_pos
         self.state.set_c1_cursor([self.mouse_x-self.window_pos_x, self.mouse_y-self.window_pos_y])
 
+        imgui.begin("Camera 1")
+
+        # Calculate if the mouse is inside the image and its position in image coordinates
+        if tex_id:
+            avail_width = imgui.get_content_region_available_width()
+            aspect_ratio = self.source.width / self.source.height
+            display_width = avail_width
+            display_height = avail_width / aspect_ratio
+
+            # Check if mouse is inside the image area
+            mouse_in_image = (self.window_pos_x <= self.mouse_x <= self.window_pos_x + display_width and
+                            self.window_pos_y <= self.mouse_y <= self.window_pos_y + display_height)
+
+            if mouse_in_image:
+                # Calculate relative position in the image (0-1)
+                rel_x = (self.mouse_x - self.window_pos_x) * self.scale
+                rel_y = (self.mouse_y - self.window_pos_y) * self.scale
+
+                # Convert to image pixel coordinates
+                img_x = int(rel_x) # * self.source.width)
+                img_y = int(rel_y) # * self.source.height)
+
+                # Update cursor position in image space
+                self.state.c1_cursor_image_pos = (img_x, img_y)
+                self.state.c1_cursor_in_image = True
+                print(f"Cursor in image: ({img_x}, {img_y})")
+            else:
+                self.state.c1_cursor_image_pos = None
+                self.state.c1_cursor_in_image = False
+
+
+                print("Window Pos: ", self.window_pos_x, self.window_pos_y)
+                print("Mouse Pos: ", self.mouse_x, self.mouse_y)
+                print("Display: ", display_width, display_height)
+                print("Window Limit: ", self.window_pos_x + display_width, self.window_pos_y + display_height)
+
+                print("Cursor not in image")
+
         # Set default window size for OpenCV Image window
         default_width = 640
         self.scale = 3.0
@@ -99,7 +137,7 @@ class CameraDisplay:
         imgui.set_next_window_size(default_width, default_height, imgui.FIRST_USE_EVER)
 
         # Begin the camera window - title fixed from "Camnera 1"
-        imgui.begin("Camera 1")
+        #imgui.begin("Camera 1")
         if tex_id:
 
             # Get available width and height of the ImGui window content area
@@ -222,30 +260,7 @@ class CameraDisplay:
                         # Silently fail if coordinate transformation doesn't work
                         pass
 
-            # Draw crosshairs when hovering over the image
-            if imgui.is_item_hovered():
-                # Get mouse position
-                mouse_x, mouse_y = imgui.get_io().mouse_pos
-
-                # Only draw if mouse is inside the image area
-                if (cursor_pos_x <= mouse_x <= cursor_pos_x + display_width and
-                    cursor_pos_y <= mouse_y <= cursor_pos_y + display_height):
-
-                    # Draw vertical line
-                    # Get a fresh draw list to ensure proper window-relative coordinates
-                    draw_list = imgui.get_window_draw_list()
-                    draw_list.add_line(
-                        mouse_x, cursor_pos_y,
-                        mouse_x, cursor_pos_y + display_height,
-                        imgui.get_color_u32_rgba(1, 1, 0, 0.5), 1.0
-                    )
-
-                    # Draw horizontal line
-                    draw_list.add_line(
-                        cursor_pos_x, mouse_y,
-                        cursor_pos_x + display_width, mouse_y,
-                        imgui.get_color_u32_rgba(1, 1, 0, 0.5), 1.0
-                    )
+            # Crosshairs are now drawn directly on the frame in FrameProcessor.annotate_frame
 
             # Check for mouse clicks inside the image
             if imgui.is_item_hovered() and imgui.is_mouse_clicked(0):  # 0 = left mouse button
@@ -338,10 +353,10 @@ class FrameProcessor:
         self.smoother = sv.DetectionsSmoother()
         self.mask_annotator = sv.MaskAnnotator()
         self.old_gray = None
-        
+
         # Flow analysis settings
         self.flow_verbose = True  # Set to True for detailed flow logging
-        
+
         # COCO dataset vehicle classes (2: car, 5: bus, 7: truck)
         self.vehicle_classes = [2, 7]
 
@@ -376,10 +391,10 @@ class FrameProcessor:
 
         # Red cars, so red channel instead of normal gray scale conversion
         _, _, frame_gray = cv2.split(frame)
-        
-        # Initialize flow field 
+
+        # Initialize flow field
         self.flow = None
-        
+
         if self.old_gray is not None:
             # Calculate sparse optical flow for visualization
             lk_params = dict(winSize=(15, 15), maxLevel=2, criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03))
@@ -397,7 +412,7 @@ class FrameProcessor:
                 mask = cv2.line(mask, (int(a), int(b)), (int(c), int(d)), (0, 0, 255), 2)
                 of_frame = cv2.circle(of_frame, (int(a), int(b)), 5, (0, 0, 255), -1)
                 of_frame = cv2.add(of_frame, mask)
-                
+
             # Calculate dense optical flow for detection integration
             self.flow = cv2.calcOpticalFlowFarneback(
                 self.old_gray, frame_gray, None, 0.5, 3, 15, 3, 5, 1.2, 0
@@ -444,7 +459,7 @@ class FrameProcessor:
         # Return the original frame, detections, and car_detections
         return of_frame, detections, car_detections
 
-    def annotate_frame(self, frame, model, detections, car_detections, quad_points=None):
+    def annotate_frame(self, frame, model, detections, car_detections, quad_points=None, cursor_pos=None):
         """
         Annotate a processed frame with detection visualizations and optional quad overlay
 
@@ -454,21 +469,23 @@ class FrameProcessor:
             detections: Supervision Detections object
             car_detections: List of car detections
             quad_points: Optional list of quad corner points to draw
+            cursor_pos: Optional cursor position in image space for drawing crosshairs
 
         Returns:
             Annotated frame
         """
-        if detections is None:
-            return frame
+        # Start with a copy of the frame
+        output_frame = frame.copy()
 
-        # Annotate with mask annotator
-        annotated_image = self.mask_annotator.annotate(
-            scene=frame.copy(), detections=detections)
+        # If we have detections, add them to the frame
+        if detections is not None:
+            # Annotate with mask annotator
+            output_frame = self.mask_annotator.annotate(
+                scene=output_frame, detections=detections)
 
-        # Add bounding boxes for vehicle detections
-        output_frame = annotated_image
-        class_names = model.names
-        
+        # Get class names for car detections if model is provided
+        class_names = model.names if model is not None else {}
+
         # Draw quad overlay if provided
         if quad_points is not None:
             # Use OpenCV to draw the quad on the frame
@@ -478,30 +495,77 @@ class FrameProcessor:
                     next_i = (i + 1) % 4
                     x1, y1 = quad_points[i]
                     x2, y2 = quad_points[next_i]
-                    
+
                     # Convert to integers
                     x1, y1 = int(x1), int(y1)
                     x2, y2 = int(x2), int(y2)
-                    
+
                     # Draw line on the frame (bright green)
                     cv2.line(output_frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                
+
                 # Add numbers to corners for reference
                 for i, (x, y) in enumerate(quad_points):
                     # Convert to integers
                     x, y = int(x), int(y)
-                    
+
                     # Draw number (white text)
                     cv2.putText(
-                        output_frame, 
-                        f"{i+1}", 
+                        output_frame,
+                        f"{i+1}",
                         (x + 5, y - 5),
-                        cv2.FONT_HERSHEY_SIMPLEX, 
-                        0.7, 
-                        (255, 255, 255), 
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.7,
+                        (255, 255, 255),
                         2
                     )
 
+        # Draw crosshairs if cursor position is provided
+        if cursor_pos is not None:
+            print(f"Drawing crosshairs at {cursor_pos}")
+            img_x, img_y = cursor_pos
+
+            # Make sure coordinates are within image bounds
+            h, w = output_frame.shape[:2]
+            if 0 <= img_x < w and 0 <= img_y < h:
+                # Draw clear bright yellow crosshairs that will be visible over any background
+
+                # Vertical line (bright yellow)
+                cv2.line(
+                    output_frame,
+                    (img_x, 0),
+                    (img_x, h),
+                    (0, 255, 255),  # Yellow (BGR format)
+                    3  # Even thicker line for better visibility
+                )
+
+                # Horizontal line (bright yellow)
+                cv2.line(
+                    output_frame,
+                    (0, img_y),
+                    (w, img_y),
+                    (0, 255, 255),  # Yellow (BGR format)
+                    3  # Even thicker line for better visibility
+                )
+
+                # Add a white dot at the center of the crosshairs
+                cv2.circle(
+                    output_frame,
+                    (img_x, img_y),
+                    5,  # 5 pixel radius
+                    (255, 255, 255),  # White
+                    -1  # Filled circle
+                )
+
+                # Add a black outline to make it stand out
+                cv2.circle(
+                    output_frame,
+                    (img_x, img_y),
+                    5,  # 5 pixel radius
+                    (0, 0, 0),  # Black
+                    1  # 1 pixel outline
+                )
+
+        # Add car bounding boxes if available
         for detection in car_detections:
             # Check if this detection includes flow data
             if len(detection) >= 8:
@@ -511,20 +575,20 @@ class FrameProcessor:
                 x1, y1, x2, y2, conf, cls_id = detection
                 has_flow = False
                 flow_x, flow_y = 0, 0
-            
+
             # Draw bounding box (yellow)
             box_color = (0, 255, 255)
             cv2.rectangle(output_frame, (x1, y1), (x2, y2), box_color, 2)
-            
+
             # If we have flow data, draw the flow vector
             if has_flow and (abs(flow_x) > 0.5 or abs(flow_y) > 0.5):
                 center_x = x1 + (x2 - x1) // 2
                 center_y = y1 + (y2 - y1) // 2
-                
+
                 # Draw arrow indicating direction and magnitude of flow
                 end_x = int(center_x + flow_x * 10)  # Scale for visibility
                 end_y = int(center_y + flow_y * 10)
-                
+
                 cv2.arrowedLine(
                     output_frame,
                     (center_x, center_y),
@@ -532,13 +596,13 @@ class FrameProcessor:
                     (255, 0, 0),  # Blue color for flow vectors
                     2,
                 )
-            
+
             # Get vehicle type
             vehicle_type = class_names[cls_id]
-            
+
             # Prepare label with vehicle type and confidence
             label = f"{vehicle_type}: {conf:.2f}"
-            
+
             # Calculate label position
             label_size, _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 2)
             y1_label = max(y1, label_size[1])
@@ -554,16 +618,16 @@ class FrameProcessor:
             #            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 2)
 
         return output_frame
-    
+
     def combine_detections_with_flow(self, car_detections, flow=None, verbose=None):
         """
         Combine car detections with optical flow data to enhance tracking
-        
+
         Args:
             car_detections: List of [x1, y1, x2, y2, conf, cls_id] for detected vehicles
             flow: Optional optical flow data. If None, uses self.flow calculated during processing
             verbose: Override default verbosity setting (self.flow_verbose)
-            
+
         Returns:
             List of enhanced car detections with flow information
             Format: [x1, y1, x2, y2, conf, cls_id, mean_flow_x, mean_flow_y]
@@ -571,61 +635,61 @@ class FrameProcessor:
         # Set verbosity
         if verbose is None:
             verbose = self.flow_verbose
-            
+
         if flow is None:
             flow = self.flow
-            
+
         if flow is None or not car_detections:
             # Return original detections with zero flow if no flow data is available
             if verbose:
                 print("No flow data available or no detections to process")
             return [(x1, y1, x2, y2, conf, cls, 0, 0) for x1, y1, x2, y2, conf, cls in car_detections]
-            
+
         enhanced_detections = []
-        
+
         if verbose:
             print(f"\n--- Flow Analysis for {len(car_detections)} Detections ---")
-        
+
         # Process each detection
         for i, det in enumerate(car_detections):
             x1, y1, x2, y2, conf, cls = det
-            
+
             # Ensure coordinates are integers
             x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
-            
+
             # Make sure the ROI is within image bounds
             h, w = flow.shape[0:2]
             x1, y1 = max(0, x1), max(0, y1)
             x2, y2 = min(w-1, x2), min(h-1, y2)
-            
+
             # Skip if ROI is invalid
             if x1 >= x2 or y1 >= y2:
                 if verbose:
                     print(f"Detection #{i+1}: Invalid ROI dimensions, skipping flow analysis")
                 enhanced_detections.append((x1, y1, x2, y2, conf, cls, 0, 0))
                 continue
-                
+
             # Extract ROI from flow field
             try:
                 roi_flow = flow[y1:y2, x1:x2]
-                
+
                 # Calculate average flow in ROI
                 mean_flow_x = np.mean(roi_flow[:, :, 0])
                 mean_flow_y = np.mean(roi_flow[:, :, 1])
-                
+
                 # Calculate flow magnitude and direction
                 flow_magnitude = np.sqrt(mean_flow_x**2 + mean_flow_y**2)
                 flow_direction = np.arctan2(mean_flow_y, mean_flow_x) * 180 / np.pi
-                
+
                 # Calculate predicted position
                 new_center_x = (x1 + x2) // 2 + mean_flow_x
                 new_center_y = (y1 + y2) // 2 + mean_flow_y
-                
+
                 # Log flow information if verbose
                 if verbose:
                     center_x, center_y = (x1 + x2) // 2, (y1 + y2) // 2
                     vehicle_type = "car" if cls == 2 else "truck" if cls == 7 else f"class_{cls}"
-                    
+
                     print(f"Detection #{i+1} ({vehicle_type}, conf: {conf:.2f}): ")
                     if flow_magnitude > 0.5:
                         print(f"  Flow: ({mean_flow_x:.2f}, {mean_flow_y:.2f}) pixels")
@@ -633,20 +697,20 @@ class FrameProcessor:
                         print(f"  Predicted center: ({center_x}, {center_y}) → ({new_center_x:.1f}, {new_center_y:.1f})")
                     else:
                         print(f"  Minimal flow detected ({flow_magnitude:.2f} pixels)")
-                
+
                 # Add to enhanced detections with flow values
                 enhanced_detections.append((x1, y1, x2, y2, conf, cls, mean_flow_x, mean_flow_y))
             except Exception as e:
                 if verbose:
                     print(f"Detection #{i+1}: Error processing flow: {e}")
                 enhanced_detections.append((x1, y1, x2, y2, conf, cls, 0, 0))
-        
+
         if verbose:
             print("--- End of Flow Analysis ---\n")
-            
+
         return enhanced_detections
 
-    def process_and_annotate_frame(self, source, model, quad, conf_threshold=0.25, use_flow=True, draw_quad=True):
+    def process_and_annotate_frame(self, source, model, quad, conf_threshold=0.25, use_flow=True, draw_quad=True, cursor_pos=None):
         """
         Process a frame and annotate it (convenience method combining the two steps)
 
@@ -657,20 +721,28 @@ class FrameProcessor:
             conf_threshold: Confidence threshold
             use_flow: Whether to enhance detections with optical flow
             draw_quad: Whether to draw the quad boundary on the frame
+            cursor_pos: Optional cursor position in image space for drawing crosshairs
 
         Returns:
             Tuple of (annotated_frame, car_detections)
         """
         frame, detections, car_detections = self.process_frame(source, model, quad, conf_threshold)
-        
+
         # Enhance detections with optical flow if requested
         if use_flow and len(car_detections) > 0:
             car_detections = self.combine_detections_with_flow(car_detections)
-        
-        # Pass quad points to annotate_frame if requested
+
+        # Pass quad points and cursor position to annotate_frame
         quad_points = quad if draw_quad else None
-        annotated_frame = self.annotate_frame(frame, model, detections, car_detections, quad_points)
-        
+        annotated_frame = self.annotate_frame(
+            frame,
+            model,
+            detections,
+            car_detections,
+            quad_points,
+            cursor_pos
+        )
+
         return annotated_frame, car_detections
 
 
@@ -794,7 +866,8 @@ def main():
                     model,
                     app_state.camera1_points,
                     use_flow=True,
-                    draw_quad=True  # Draw the quad directly on the frame
+                    draw_quad=True,  # Draw the quad directly on the frame
+                    cursor_pos=app_state.c1_cursor_image_pos if app_state.c1_cursor_in_image else None
                 )
                 # Update detections only when processing is active
                 app_state.set_car_detections(car_detections)
@@ -804,14 +877,17 @@ def main():
                 frame_with_quad = frame.copy()
                 processed_frame = frame_processor.annotate_frame(
                     frame_with_quad,
-                    model, 
-                    None, 
+                    model,
+                    None,
                     [],
-                    quad_points=app_state.camera1_points
+                    quad_points=app_state.camera1_points,
+                    cursor_pos=app_state.c1_cursor_image_pos if app_state.c1_cursor_in_image else None
                 )
 
             # Always update texture with the current frame (processed or raw)
+            # Use the processed frame with annotations for display
             sources.update_opengl_texture(source_1.get_texture_id(), processed_frame)
+
             # Draw the camera view using the CameraDisplay class
             camera_display.draw()
 

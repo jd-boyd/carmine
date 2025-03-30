@@ -175,9 +175,10 @@ class VideoSource(Source):
                 if not ret:  # Still no frame after reset
                     return self.frame
 
-            # Update current frame
+            # Update current frame (but don't update texture here, let the main loop do it)
             self.frame = frame
-            update_opengl_texture(self.texture_id, self.frame)
+            # Don't update texture here - let the main loop do it with the processed frame
+            # update_opengl_texture(self.texture_id, self.frame)
             self.frame_counter += 1
             self.last_frame_time = current_time
 
@@ -266,10 +267,10 @@ class AVFSource(VideoSource):
         if (current_time - self.last_frame_time) > 0.033:
             ret, frame = self.cap.read()
 
-            # If reached end of video, loop back to beginning
             # Update current frame
             self.frame = frame
-            update_opengl_texture(self.texture_id, self.frame)
+            # Don't update texture here - let the main loop do it with the processed frame
+            # update_opengl_texture(self.texture_id, self.frame)
             self.frame_counter += 1
             self.last_frame_time = current_time
 

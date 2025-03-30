@@ -41,11 +41,19 @@ class State:
         self.max_cars = 10  # Maximum number of cars to track
         self.c1_show_carbox = True
         self.c1_show_mines = True
-        self.c1_cursor = []
-        self.c1_cursor_field_position = None
+        self.c1_cursor = []  # Cursor position in window space
+        self.c1_cursor_image_pos = None  # Cursor position in image space (pixel coordinates)
+        self.c1_cursor_in_image = False  # Flag to indicate if cursor is within the image
+        self.c1_cursor_field_position = None  # Cursor position in field space
         self.processing_paused = False  # Flag to control YOLO and detector processing
 
         self.car_detections = []  # Raw detections from YOLO
+        
+        # Cache for POI distance calculations (updated each frame)
+        self._poi_car_distances = {}  # Maps POI index to (car_index, distance) tuple
+        self._closest_poi_car = None  # (poi_index, car_index, distance) of closest overall pair
+        self._all_distances = None   # Comprehensive distance data
+        self._cached_car_count = 0   # Track how many cars were in the last calculation
 
         # Load configuration if exists
         self.load_config()
@@ -82,6 +90,9 @@ class State:
             self.highlighted_car = self.highlighted_cars[0]
             self.car_field_position = self.car_field_positions[0] if len(self.car_field_positions) > 0 else None
 
+        # Update distance caches when car positions change
+        self._update_distance_cache()
+
 
     def set_camera_point(self, camera_num, point_index, x, y):
         """Set a camera point to the given coordinates"""
@@ -104,6 +115,8 @@ class State:
             self.poi_positions[index] = (x, y)
             self.waiting_for_poi_point = -1  # Reset waiting state
             self.save_config()
+            # Update distance cache when POI positions change
+            self._update_distance_cache()
         self.save_config()
 
 
@@ -376,6 +389,10 @@ class State:
             list: List of car distances, where each entry is a list of (poi_index, distance) tuples
                   for that car, sorted by distance
         """
+        # Return cached value if available and cars haven't changed
+        if self._all_distances is not None and self._cached_car_count == len(self.car_field_positions):
+            return self._all_distances
+            
         all_distances = []
 
         # Use car_field_positions list for all cars
@@ -384,4 +401,125 @@ class State:
             if car_distances:
                 all_distances.append(car_distances)
 
+        # Cache the result
+        self._all_distances = all_distances
+        self._cached_car_count = len(self.car_field_positions)
         return all_distances
+        
+    def _update_distance_cache(self):
+        """
+        Update the internal distance cache.
+        Called when car positions or POI positions change.
+        """
+        # Clear existing cache
+        self._poi_car_distances = {}
+        self._closest_poi_car = None
+        self._all_distances = None
+        self._cached_car_count = len(self.car_field_positions)
+        
+        # If no cars, nothing to cache
+        if not self.car_field_positions:
+            return
+            
+        # Find closest car for each POI
+        for poi_idx, (poi_x, poi_y) in enumerate(self.poi_positions):
+            min_distance = float('inf')
+            closest_car = -1
+            
+            # Check each car's distance to this POI
+            for car_idx, (car_x, car_y) in enumerate(self.car_field_positions):
+                # Calculate Euclidean distance
+                dist = ((car_x - poi_x)**2 + (car_y - poi_y)**2)**0.5
+                if dist < min_distance:
+                    min_distance = dist
+                    closest_car = car_idx
+            
+            # Cache the closest car to this POI if one was found
+            if closest_car >= 0:
+                self._poi_car_distances[poi_idx] = (closest_car, min_distance)
+        
+        # Find the overall closest POI-car pair
+        if self._poi_car_distances:
+            closest_poi = -1
+            closest_car = -1
+            min_distance = float('inf')
+            
+            # Check each POI's closest car distance
+            for poi_idx, (car_idx, distance) in self._poi_car_distances.items():
+                if distance < min_distance:
+                    min_distance = distance
+                    closest_poi = poi_idx
+                    closest_car = car_idx
+            
+            # Cache the closest pair
+            if closest_poi >= 0:
+                self._closest_poi_car = (closest_poi, closest_car, min_distance)
+    
+    def get_closest_car_to_poi(self, poi_index):
+        """
+        Get the closest car to a specific POI.
+        
+        Args:
+            poi_index: Index of the POI to check
+            
+        Returns:
+            tuple: (car_index, distance) or None if no cars or POI doesn't exist
+        """
+        # Ensure cache is updated
+        if self._cached_car_count != len(self.car_field_positions):
+            self._update_distance_cache()
+            
+        # Return cached result if available
+        return self._poi_car_distances.get(poi_index, None)
+    
+    def get_closest_poi_car_pair(self):
+        """
+        Get the closest POI-car pair overall.
+        
+        Returns:
+            tuple: (poi_index, car_index, distance) or None if no cars
+        """
+        # Ensure cache is updated
+        if self._cached_car_count != len(self.car_field_positions):
+            self._update_distance_cache()
+            
+        return self._closest_poi_car
+        
+    def get_poi_distance_color(self, distance):
+        """
+        Get the color for a POI based on its distance from a car.
+        
+        Args:
+            distance: Distance value to check
+            
+        Returns:
+            tuple: (r, g, b) color values (0-1 range)
+        """
+        # Default color (red) if no distance provided
+        if distance is None or distance == float('inf'):
+            return (1.0, 0.0, 0.0)
+            
+        # Get thresholds from poi_ranges
+        if len(self.poi_ranges) >= 3:
+            safe_distance = self.poi_ranges[0]
+            caution_distance = self.poi_ranges[1]
+            danger_distance = self.poi_ranges[2]
+        else:
+            # Default values if not enough ranges defined
+            safe_distance = 45
+            caution_distance = 15
+            danger_distance = 3
+            
+        # Set color based on distance thresholds
+        if distance > safe_distance:
+            # Green - safe
+            return (0.0, 1.0, 0.0)
+        elif distance > caution_distance:
+            # Yellow - caution
+            return (1.0, 1.0, 0.0)
+        elif distance > danger_distance:
+            # Orange - approaching danger
+            return (1.0, 0.5, 0.0)
+        else:
+            # Red - danger
+            return (1.0, 0.0, 0.0)

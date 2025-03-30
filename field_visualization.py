@@ -198,43 +198,18 @@ class FieldVisualization:
 
                 # If we're not setting this POI, use distance-based coloring
                 if i != self.state.waiting_for_poi_point:
-                    # Try to find the minimum distance from any car to this POI
+                    # Get closest car from cached data
+                    closest_info = self.state.get_closest_car_to_poi(i)
+                    
+                    # Get minimum distance if a closest car was found
                     min_distance = float('inf')
-
-                    # Calculate distances if we have cars
-                    if self.state.car_field_positions:
-                        # Check each car's distance to this POI
-                        for car_x, car_y in self.state.car_field_positions:
-                            # Calculate Euclidean distance
-                            dist = ((car_x - field_x)**2 + (car_y - field_y)**2)**0.5
-                            min_distance = min(min_distance, dist)
-
-                    # Set color based on POI ranges thresholds
+                    if closest_info:
+                        _, min_distance = closest_info
+                        
+                    # Set color based on distance if a car was found
                     if min_distance != float('inf'):
-                        # Get thresholds from poi_ranges
-                        if len(self.state.poi_ranges) >= 3:
-                            safe_distance = self.state.poi_ranges[0]
-                            caution_distance = self.state.poi_ranges[1]
-                            danger_distance = self.state.poi_ranges[2]
-                        else:
-                            # Default values if not enough ranges defined
-                            safe_distance = 45
-                            caution_distance = 15
-                            danger_distance = 3
-
-                        # Set color based on distance thresholds (same logic as in camera view)
-                        if min_distance > safe_distance:
-                            # Green - safe
-                            r, g, b = 0.0, 1.0, 0.0
-                        elif min_distance > caution_distance:
-                            # Yellow - caution
-                            r, g, b = 1.0, 1.0, 0.0
-                        elif min_distance > danger_distance:
-                            # Orange - approaching danger
-                            r, g, b = 1.0, 0.5, 0.0
-                        else:
-                            # Red - danger
-                            r, g, b = 1.0, 0.0, 0.0
+                        # Use the state's color calculation method
+                        r, g, b = self.state.get_poi_distance_color(min_distance)
 
                 # Create colors with the determined RGB values
                 color = imgui.get_color_u32_rgba(r, g, b, 1.0)

@@ -360,7 +360,9 @@ class ControlPanel:
 
             imgui.text("Cursor pos IS: ({}, {})".format(*self.camera_display.get_mouse_in_image_space()))
 
-            imgui.text("Cursor pos FS: ({}, {})".format(*self.camera_display.get_mouse_in_field_space()))
+            # Get cursor position in field space and format with 2 decimal places
+            field_x, field_y = self.camera_display.get_mouse_in_field_space()
+            imgui.text("Cursor pos FS: ({:.2f}, {:.2f})".format(field_x, field_y))
 
 
             changed, checked = imgui.checkbox("Car box", self.state.c1_show_carbox)
@@ -426,43 +428,16 @@ class ControlPanel:
 
                 # Show closest car distance for this POI
                 if self.state.car_field_positions:
-                    # Find closest car to this POI
-                    poi_x, poi_y = self.state.poi_positions[i]
-                    min_distance = float('inf')
-                    closest_car = -1
-
-                    # Check each car's distance to this POI
-                    for car_idx, (car_x, car_y) in enumerate(self.state.car_field_positions):
-                        # Calculate Euclidean distance
-                        dist = ((car_x - poi_x)**2 + (car_y - poi_y)**2)**0.5
-                        if dist < min_distance:
-                            min_distance = dist
-                            closest_car = car_idx
-
+                    # Get closest car from cached data
+                    closest_info = self.state.get_closest_car_to_poi(i)
+                    
                     # Display distance if we found a closest car
-                    if closest_car >= 0:
+                    if closest_info:
+                        closest_car, min_distance = closest_info
                         imgui.same_line()
-
-                        # Determine the color based on distance thresholds
-                        if len(self.state.poi_ranges) >= 3:
-                            safe_distance = self.state.poi_ranges[0]
-                            caution_distance = self.state.poi_ranges[1]
-                            danger_distance = self.state.poi_ranges[2]
-                        else:
-                            # Default values if not enough ranges defined
-                            safe_distance = 45
-                            caution_distance = 15
-                            danger_distance = 3
-
-                        # Set text color based on distance thresholds
-                        if min_distance > safe_distance:
-                            text_color = (0.0, 1.0, 0.0)  # Green - safe
-                        elif min_distance > caution_distance:
-                            text_color = (1.0, 1.0, 0.0)  # Yellow - caution
-                        elif min_distance > danger_distance:
-                            text_color = (1.0, 0.5, 0.0)  # Orange - approaching danger
-                        else:
-                            text_color = (1.0, 0.0, 0.0)  # Red - danger
+                        
+                        # Get color based on distance from cache
+                        text_color = self.state.get_poi_distance_color(min_distance)
                         imgui.same_line()
                         imgui.text_colored(f"Car {closest_car+1}: {min_distance:.1f}",
                                          text_color[0], text_color[1], text_color[2], 1.0)
@@ -509,44 +484,21 @@ class ControlPanel:
                 f"##range_2", self.state.poi_ranges[2]
             )
 
-            # # Add closest POI detection info if cars are present
-            # if self.state.car_field_positions:
-            #     # Find the closest POI to any car
-            #     closest_poi = -1
-            #     closest_car = -1
-            #     min_distance = float('inf')
-
-            #     # Check each POI against each car
-            #     for poi_idx, (poi_x, poi_y) in enumerate(self.state.poi_positions):
-            #         for car_idx, (car_x, car_y) in enumerate(self.state.car_field_positions):
-            #             # Calculate Euclidean distance
-            #             dist = ((car_x - poi_x)**2 + (car_y - poi_y)**2)**0.5
-            #             if dist < min_distance:
-            #                 min_distance = dist
-            #                 closest_poi = poi_idx
-            #                 closest_car = car_idx
-
-            #     # If we found a closest point, display its information
-            #     if closest_poi >= 0:
-            #         imgui.same_line()
-
-            #         # Determine the color based on distance thresholds
-            #         safe_distance = self.state.poi_ranges[0]
-            #         caution_distance = self.state.poi_ranges[1]
-            #         danger_distance = self.state.poi_ranges[2]
-
-            #         # Set text color based on distance thresholds
-            #         if min_distance > safe_distance:
-            #             text_color = (0.0, 1.0, 0.0)  # Green - safe
-            #         elif min_distance > caution_distance:
-            #             text_color = (1.0, 1.0, 0.0)  # Yellow - caution
-            #         elif min_distance > danger_distance:
-            #             text_color = (1.0, 0.5, 0.0)  # Orange - approaching danger
-            #         else:
-            #             text_color = (1.0, 0.0, 0.0)  # Red - danger
-
-            #         imgui.text_colored(f"Closest: Point {closest_poi+1} to Car {closest_car+1}: {min_distance:.1f}",
-            #                           text_color[0], text_color[1], text_color[2], 1.0)
+            # Add closest POI detection info if cars are present
+            if self.state.car_field_positions:
+                # Get the closest POI-car pair from cached data
+                closest_pair = self.state.get_closest_poi_car_pair()
+                
+                # If we found a closest pair, display its information
+                if closest_pair:
+                    closest_poi, closest_car, min_distance = closest_pair
+                    imgui.same_line()
+                    
+                    # Get color based on distance from cache
+                    text_color = self.state.get_poi_distance_color(min_distance)
+                    
+                    imgui.text_colored(f"Closest: Point {closest_poi+1} to Car {closest_car+1}: {min_distance:.1f}", 
+                                      text_color[0], text_color[1], text_color[2], 1.0)
 
             # Save config if any field changed
             if changed0 or changed1 or changed2:
