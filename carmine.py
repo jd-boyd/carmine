@@ -90,11 +90,20 @@ class CameraDisplay:
         self.mouse_x, self.mouse_y = imgui.get_io().mouse_pos
         self.state.set_c1_cursor([self.mouse_x-self.window_pos_x, self.mouse_y-self.window_pos_y])
 
+        # Set default window size for OpenCV Image window
+        default_width = 640
+        self.scale = 3.0
+        # Calculate the correct height based on the video's aspect ratio
+        aspect_ratio = self.source.width / self.source.height
+        default_height = default_width / aspect_ratio
+        imgui.set_next_window_size(default_width, default_height, imgui.FIRST_USE_EVER)
+
         imgui.begin("Camera 1")
 
         # Calculate if the mouse is inside the image and its position in image coordinates
         if tex_id:
             avail_width = imgui.get_content_region_available_width()
+            self.scale = self.source.width / avail_width;
             aspect_ratio = self.source.width / self.source.height
             display_width = avail_width
             display_height = avail_width / aspect_ratio
@@ -126,23 +135,6 @@ class CameraDisplay:
                 # print("Window Limit: ", self.window_pos_x + display_width, self.window_pos_y + display_height)
 
                 # print("Cursor not in image")
-
-        # Set default window size for OpenCV Image window
-        default_width = 640
-        self.scale = 3.0
-        # Calculate the correct height based on the video's aspect ratio
-        aspect_ratio = self.source.width / self.source.height
-        default_height = default_width / aspect_ratio
-        imgui.set_next_window_size(default_width, default_height, imgui.FIRST_USE_EVER)
-
-        # Begin the camera window - title fixed from "Camnera 1"
-        #imgui.begin("Camera 1")
-        if tex_id:
-
-            # Get available width and height of the ImGui window content area
-            avail_width = imgui.get_content_region_available_width()
-
-            self.scale = self.source.width / avail_width;
 
             # Calculate aspect ratio to maintain proportions
             # Set display dimensions based on available width and aspect ratio
@@ -394,6 +386,7 @@ class FrameProcessor:
         # Initialize flow field
         self.flow = None
 
+        f_start_time = time.time()
         if self.old_gray is not None:
             # Calculate sparse optical flow for visualization
             lk_params = dict(winSize=(15, 15), maxLevel=2, criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03))
@@ -421,10 +414,11 @@ class FrameProcessor:
             self.flow = np.zeros((frame.shape[0], frame.shape[1], 2), dtype=np.float32)
 
         self.old_gray = frame_gray
+        print("Flow time: ", int((time.time() - f_start_time) * 1000))
 
         # Get model prediction
-        #, imgsz=940
-        results = model.predict(frame, conf=conf_threshold)[0]
+        #
+        results = model.predict(frame, imgsz=1280, conf=conf_threshold)[0]
 
         # Filter detections within the defined quadrilateral
         polygon = np.array(quad)
@@ -535,7 +529,7 @@ class FrameProcessor:
                     (img_x, 0),
                     (img_x, h),
                     (0, 255, 255),  # Yellow (BGR format)
-                    3  # Even thicker line for better visibility
+                    1  # Even thicker line for better visibility
                 )
 
                 # Horizontal line (bright yellow)
@@ -544,7 +538,7 @@ class FrameProcessor:
                     (0, img_y),
                     (w, img_y),
                     (0, 255, 255),  # Yellow (BGR format)
-                    3  # Even thicker line for better visibility
+                    1  # Even thicker line for better visibility
                 )
 
                 # Add a white dot at the center of the crosshairs
@@ -808,18 +802,42 @@ class FrameProcessor:
                             new_x2 = int(new_center_x + width/2)
                             new_y2 = int(new_center_y + height/2)
 
-                            # Slightly reduce confidence for predicted detections
-                            new_conf = max(0.1, conf * 0.8)  # Reduce confidence but keep minimum of 0.1
+                            # Check if this predicted detection would overlap with any existing detection
+                            predicted_box_overlaps = False
 
-                            # Add to predicted detections with flow data
-                            predicted_det = (new_x1, new_y1, new_x2, new_y2, new_conf, cls_id, flow_x, flow_y)
-                            predicted_detections.append(predicted_det)
+                            # Check against all current detections
+                            for cur_det in current_detections:
+                                cur_x1, cur_y1, cur_x2, cur_y2 = cur_det[0:4]
 
-                            if verbose:
-                                vehicle_type = "car" if cls_id == 2 else "truck" if cls_id == 7 else f"class_{cls_id}"
-                                print(f"Predicted disappeared {vehicle_type} (prev conf: {conf:.2f}, new: {new_conf:.2f})")
-                                print(f"  Moved from ({prev_center_x}, {prev_center_y}) to ({new_center_x}, {new_center_y})")
-                                print(f"  Flow: ({flow_x:.2f}, {flow_y:.2f}) pixels")
+                                # Calculate intersection area
+                                x_overlap = max(0, min(new_x2, cur_x2) - max(new_x1, cur_x1))
+                                y_overlap = max(0, min(new_y2, cur_y2) - max(new_y1, cur_y1))
+                                overlap_area = x_overlap * y_overlap
+
+                                # Calculate predicted detection area
+                                pred_area = (new_x2 - new_x1) * (new_y2 - new_y1)
+
+                                # If overlap is significant (>30% of predicted area), don't add this prediction
+                                if pred_area > 0 and overlap_area / pred_area > 0.3:
+                                    predicted_box_overlaps = True
+                                    if verbose:
+                                        print(f"  Skipping predicted detection - overlaps with existing detection")
+                                    break
+
+                            # Only add if it doesn't significantly overlap with any existing detection
+                            if not predicted_box_overlaps:
+                                # Slightly reduce confidence for predicted detections
+                                new_conf = max(0.1, conf * 0.8)  # Reduce confidence but keep minimum of 0.1
+
+                                # Add to predicted detections with flow data
+                                predicted_det = (new_x1, new_y1, new_x2, new_y2, new_conf, cls_id, flow_x, flow_y)
+                                predicted_detections.append(predicted_det)
+
+                                if verbose:
+                                    vehicle_type = "car" if cls_id == 2 else "truck" if cls_id == 7 else f"class_{cls_id}"
+                                    print(f"Predicted disappeared {vehicle_type} (prev conf: {conf:.2f}, new: {new_conf:.2f})")
+                                    print(f"  Moved from ({prev_center_x}, {prev_center_y}) to ({new_center_x}, {new_center_y})")
+                                    print(f"  Flow: ({flow_x:.2f}, {flow_y:.2f}) pixels")
             except Exception as e:
                 if verbose:
                     print(f"Error predicting detection #{i}: {e}")
