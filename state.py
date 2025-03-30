@@ -8,68 +8,257 @@ import config_db
 PRIMARY_CONFIG_FILE = "config.json"
 CURRENT_CONFIG_NAME = "current"  # Default config name in database
 
+class Config:
+    """
+    Class to hold application configuration that gets persisted.
+    This includes all settings that should be saved between sessions.
+    """
+    def __init__(self):
+        # Camera selection
+        self.selected_camera1 = 0
+        self.camera_name = ""
+        
+        # Camera points define the field boundary in camera view
+        self.camera1_points = [[0, 0] for _ in range(4)]
+        
+        # Field dimensions
+        self.field_size = [100, 300]
+        
+        # Points of Interest
+        self.poi_positions = [
+            (32, 90), (80, 150), (99, 210), (48, 240), (99, 60),
+            (16, 270), (99, 30), (64, 180), (96, 120)
+        ]
+        self.poi_ranges = [45, 15, 3]  # Safe, Caution, Danger thresholds
+        
+        # UI and visualization settings
+        self.c1_show_carbox = True
+        self.c1_show_mines = True
+        self.processing_paused = False
+        
+        # Video source settings
+        self.use_video_file = False
+        self.video_file_path = ""
+        
+        # Processing settings
+        self.optical_flow_scale = 0.75
+    
+    def to_dict(self):
+        """Convert config to dictionary for storage"""
+        return {
+            'selected_camera1': self.selected_camera1,
+            'camera_name': self.camera_name,
+            'camera1_points': self.camera1_points,
+            'field_size': self.field_size,
+            'poi_positions': self.poi_positions,
+            'poi_ranges': self.poi_ranges,
+            'c1_show_carbox': self.c1_show_carbox,
+            'c1_show_mines': self.c1_show_mines,
+            'processing_paused': self.processing_paused,
+            'use_video_file': self.use_video_file,
+            'video_file_path': self.video_file_path,
+            'optical_flow_scale': self.optical_flow_scale
+        }
+    
+    def from_dict(self, config_dict):
+        """Load config from dictionary"""
+        if not config_dict:
+            return
+            
+        # Load camera selection
+        if 'selected_camera1' in config_dict:
+            self.selected_camera1 = config_dict['selected_camera1']
+        if 'camera_name' in config_dict:
+            self.camera_name = config_dict['camera_name']
+
+        # Load camera points
+        if 'camera1_points' in config_dict:
+            self.camera1_points = config_dict['camera1_points']
+
+        # Load field size
+        if 'field_size' in config_dict:
+            self.field_size = config_dict['field_size']
+
+        # Load POI positions
+        if 'poi_positions' in config_dict:
+            self.poi_positions = config_dict['poi_positions']
+            if len(self.poi_positions) > 9:
+                self.poi_positions = self.poi_positions[0:9]
+
+        # Load POI ranges
+        if 'poi_ranges' in config_dict:
+            self.poi_ranges = config_dict['poi_ranges']
+
+        # Load UI settings if available
+        if 'c1_show_carbox' in config_dict:
+            self.c1_show_carbox = config_dict['c1_show_carbox']
+        if 'c1_show_mines' in config_dict:
+            self.c1_show_mines = config_dict['c1_show_mines']
+        if 'processing_paused' in config_dict:
+            self.processing_paused = config_dict['processing_paused']
+            
+        # Load video file settings if available
+        if 'use_video_file' in config_dict:
+            self.use_video_file = config_dict['use_video_file']
+        if 'video_file_path' in config_dict:
+            self.video_file_path = config_dict['video_file_path']
+            
+        # Load optical flow settings if available
+        if 'optical_flow_scale' in config_dict:
+            self.optical_flow_scale = config_dict['optical_flow_scale']
+
+
 class State:
     """
     Class to hold application state, separate from UI rendering.
+    Manages both persisted configuration and runtime state.
     """
     def __init__(self, camera_list):
+        # Store camera listing
         self.camera_list = camera_list
-
-        # Set default camera selection
-        self.selected_camera1 = 0
         
-        # Initialize essential attributes
-        self.camera1_points = [[0, 0] for _ in range(4)]
-        
-        # Initialize with default configuration
-        self.reset_config()
+        # Persistent configuration
+        self.config = Config()
         
         # Track the currently loaded config name
         self.current_config_name = CURRENT_CONFIG_NAME
         
-        # Video source type and path
-        self.use_video_file = False
-        self.video_file_path = ""
-
-        # Point selection state
+        # Point selection state (transient UI state)
         self.waiting_for_camera1_point = -1  # Index of point we're waiting to set (-1 means not waiting)
         self.waiting_for_poi_point = -1      # Index of POI we're waiting to set (-1 means not waiting)
 
-        # Car tracking - extended to handle multiple cars
-        self.highlighted_cars = []  # Will store list of [x, y, width, height, confidence, class_id] of highlighted cars
-        self.car_field_positions = []  # Will store list of (x, y) positions of cars on the field
-        # Keep these for backward compatibility
+        # Car tracking - runtime state only
+        self.highlighted_cars = []  # Stores [x, y, width, height, confidence, class_id] of highlighted cars
+        self.car_field_positions = []  # Stores (x, y) positions of cars on the field
+        # Backward compatibility fields
         self.highlighted_car = None
         self.car_field_position = None
-
         self.max_cars = 10  # Maximum number of cars to track
-        self.c1_show_carbox = True
-        self.c1_show_mines = True
+
+        # Cursor tracking - runtime state only
         self.c1_cursor = []  # Cursor position in window space
         self.c1_cursor_image_pos = None  # Cursor position in image space (pixel coordinates)
         self.c1_cursor_in_image = False  # Flag to indicate if cursor is within the image
         self.c1_cursor_field_position = None  # Cursor position in field space
-        self.processing_paused = False  # Flag to control YOLO and detector processing
         
-        # Optical flow settings
-        self.optical_flow_scale = 0.75  # Scaling factor for optical flow processing (0.5 to 1.0)
-
+        # Car detection data - runtime state
         self.car_detections = []  # Raw detections from YOLO
         self.previous_car_detections = []  # Store previous frame's detections for optical flow prediction
         
-        # Cache for POI distance calculations (updated each frame)
+        # Cache for POI distance calculations (updated each frame) - runtime state
         self._poi_car_distances = {}  # Maps POI index to (car_index, distance) tuple
         self._closest_poi_car = None  # (poi_index, car_index, distance) of closest overall pair
         self._all_distances = None   # Comprehensive distance data
         self._cached_car_count = 0   # Track how many cars were in the last calculation
 
+        # Setup geometric transform for coordinate conversion - runtime state
+        self.camera1_quad = None
+        
         # Load configuration if exists
         self.load_config()
-
+        
+        # Initialize quad after loading config
+        self.update_camera_quad()
+    
+    # Property getters/setters to provide backward compatibility
+    # and bridge between config and state
+    
+    @property
+    def camera1_points(self):
+        return self.config.camera1_points
+    
+    @camera1_points.setter
+    def camera1_points(self, value):
+        self.config.camera1_points = value
+        self.update_camera_quad()
+    
+    @property
+    def field_size(self):
+        return self.config.field_size
+    
+    @field_size.setter
+    def field_size(self, value):
+        self.config.field_size = value
+    
+    @property
+    def poi_positions(self):
+        return self.config.poi_positions
+    
+    @poi_positions.setter
+    def poi_positions(self, value):
+        self.config.poi_positions = value
+        self._update_distance_cache()
+    
+    @property
+    def poi_ranges(self):
+        return self.config.poi_ranges
+    
+    @poi_ranges.setter
+    def poi_ranges(self, value):
+        self.config.poi_ranges = value
+    
+    @property
+    def c1_show_carbox(self):
+        return self.config.c1_show_carbox
+    
+    @c1_show_carbox.setter
+    def c1_show_carbox(self, value):
+        self.config.c1_show_carbox = value
+    
+    @property
+    def c1_show_mines(self):
+        return self.config.c1_show_mines
+    
+    @c1_show_mines.setter
+    def c1_show_mines(self, value):
+        self.config.c1_show_mines = value
+    
+    @property
+    def selected_camera1(self):
+        return self.config.selected_camera1
+    
+    @selected_camera1.setter
+    def selected_camera1(self, value):
+        self.config.selected_camera1 = value
+    
+    @property
+    def processing_paused(self):
+        return self.config.processing_paused
+    
+    @processing_paused.setter
+    def processing_paused(self, value):
+        self.config.processing_paused = value
+    
+    @property
+    def use_video_file(self):
+        return self.config.use_video_file
+    
+    @use_video_file.setter
+    def use_video_file(self, value):
+        self.config.use_video_file = value
+    
+    @property
+    def video_file_path(self):
+        return self.config.video_file_path
+    
+    @video_file_path.setter
+    def video_file_path(self, value):
+        self.config.video_file_path = value
+    
+    @property
+    def optical_flow_scale(self):
+        return self.config.optical_flow_scale
+    
+    @optical_flow_scale.setter
+    def optical_flow_scale(self, value):
+        self.config.optical_flow_scale = value
+    
+    def update_camera_quad(self):
+        """Update the camera quad whenever camera points change"""
         self.camera1_quad = Quad(self.camera1_points)
-
-
+    
     def set_c1_cursor(self, c):
+        """Update cursor position in window space"""
         self.c1_cursor = c
 
         # Calculate field position from cursor coordinates if cursor is not empty
@@ -79,6 +268,7 @@ class State:
             self.c1_cursor_field_position = None
 
     def set_car_detections(self, car_detections):
+        """Update car detections and calculate field positions"""
         # Store current detections in car_detections and save the previous ones
         self.previous_car_detections = self.car_detections.copy()
         self.car_detections = car_detections
@@ -103,12 +293,12 @@ class State:
         # Update distance caches when car positions change
         self._update_distance_cache()
 
-
     def set_camera_point(self, camera_num, point_index, x, y):
         """Set a camera point to the given coordinates"""
         if camera_num == 1:
             self.camera1_points[point_index] = [x, y]
             self.waiting_for_camera1_point = -1  # Reset waiting state
+            self.update_camera_quad()  # Update quad with new point
 
         # Save configuration after updating points
         self.save_config()
@@ -128,7 +318,6 @@ class State:
             # Update distance cache when POI positions change
             self._update_distance_cache()
         self.save_config()
-
 
     def field_to_uv(self, field_x, field_y):
         """
@@ -231,32 +420,19 @@ class State:
             bool: True if saved successfully, False otherwise
         """
         try:
-            # Get camera info if available
-            camera_name = ""
+            # Update camera name
             if self.selected_camera1 < len(self.camera_list):
-                camera_name = self.camera_list[self.selected_camera1][1]
-                
-            config = {
-                'selected_camera1': self.selected_camera1,
-                'camera_name': camera_name,  # Store camera name for display
-                'camera1_points': self.camera1_points,
-                'field_size': self.field_size,
-                'poi_positions': self.poi_positions,
-                'poi_ranges': self.poi_ranges,
-                'c1_show_carbox': self.c1_show_carbox,
-                'c1_show_mines': self.c1_show_mines,
-                'processing_paused': self.processing_paused,
-                'use_video_file': self.use_video_file,
-                'video_file_path': self.video_file_path,
-                'optical_flow_scale': self.optical_flow_scale
-            }
+                self.config.camera_name = self.camera_list[self.selected_camera1][1]
+            
+            # Get config as dictionary
+            config_dict = self.config.to_dict()
 
             # Save to database
-            success = config_db.save_config_to_db(config_name, config)
+            success = config_db.save_config_to_db(config_name, config_dict)
 
             # Also save to file for backwards compatibility
             with open(PRIMARY_CONFIG_FILE, 'w') as f:
-                json.dump(config, f, indent=4)
+                json.dump(config_dict, f, indent=4)
 
             # Update current config name if successful
             if success:
@@ -280,61 +456,24 @@ class State:
         """
         try:
             # First try to load from database
-            config = config_db.load_config_from_db(config_name)
+            config_dict = config_db.load_config_from_db(config_name)
             source = f"database ('{config_name}')"
 
             # If not found in database, try to load from file
-            if not config and os.path.exists(PRIMARY_CONFIG_FILE):
+            if not config_dict and os.path.exists(PRIMARY_CONFIG_FILE):
                 with open(PRIMARY_CONFIG_FILE, 'r') as f:
-                    config = json.load(f)
+                    config_dict = json.load(f)
                 source = f"file ({PRIMARY_CONFIG_FILE})"
 
                 # Save this to database for future use
-                config_db.save_config_to_db(config_name, config)
+                config_db.save_config_to_db(config_name, config_dict)
 
-            if not config:
+            if not config_dict:
                 print("No configuration found in database or file")
                 return False
 
-            # Load camera selection
-            if 'selected_camera1' in config:
-                self.selected_camera1 = config['selected_camera1']
-
-            # Load camera points
-            if 'camera1_points' in config:
-                self.camera1_points = config['camera1_points']
-
-            # Load field size
-            if 'field_size' in config:
-                self.field_size = config['field_size']
-
-            # Load POI positions
-            if 'poi_positions' in config:
-                self.poi_positions = config['poi_positions']
-                if len(self.poi_positions) > 9:
-                    self.poi_positions = self.poi_positions[0:9]
-
-            # Load POI ranges
-            if 'poi_ranges' in config:
-                self.poi_ranges = config['poi_ranges']
-
-            # Load UI settings if available
-            if 'c1_show_carbox' in config:
-                self.c1_show_carbox = config['c1_show_carbox']
-            if 'c1_show_mines' in config:
-                self.c1_show_mines = config['c1_show_mines']
-            if 'processing_paused' in config:
-                self.processing_paused = config['processing_paused']
-                
-            # Load video file settings if available
-            if 'use_video_file' in config:
-                self.use_video_file = config['use_video_file']
-            if 'video_file_path' in config:
-                self.video_file_path = config['video_file_path']
-                
-            # Load optical flow settings if available
-            if 'optical_flow_scale' in config:
-                self.optical_flow_scale = config['optical_flow_scale']
+            # Update config object with loaded values
+            self.config.from_dict(config_dict)
 
             # Update current config name to match what was loaded
             self.current_config_name = config_name
@@ -342,7 +481,7 @@ class State:
             print(f"Configuration loaded from {source}")
 
             # Update quad with new points
-            self.camera1_quad = Quad(self.camera1_points)
+            self.update_camera_quad()
 
             return True
 
@@ -352,32 +491,11 @@ class State:
 
     def reset_config(self):
         """Reset configuration to default values"""
-        # Reset camera points
-        self.camera1_points = [[0, 0] for _ in range(4)]
-        self.field_size = [100, 300]
-
-        # POI positions in field coordinates (previously normalized 0-1)
-        self.poi_positions = [
-            (32, 90), (80, 150), (99, 210), (48, 240), (99, 60),
-            (16, 270), (99, 30), (64, 180), (96, 120)
-        ]
-
-        self.poi_ranges = [45, 15, 3]
+        # Simply create a new Config with defaults
+        self.config = Config()
         
-        # Default UI settings
-        if not hasattr(self, 'c1_show_carbox'):
-            self.c1_show_carbox = True
-            
-        if not hasattr(self, 'c1_show_mines'):
-            self.c1_show_mines = True
-            
-        if not hasattr(self, 'processing_paused'):
-            self.processing_paused = False
-            
-        # Default optical flow settings
-        if not hasattr(self, 'optical_flow_scale'):
-            self.optical_flow_scale = 0.75
-
+        # Update quad with reset points
+        self.update_camera_quad()
 
     def calculate_poi_distances(self, car_index=0):
         """
