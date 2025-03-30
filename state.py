@@ -176,6 +176,7 @@ class State:
 
         Args:
             car_detection: [x1, y1, x2, y2, conf, cls_id] car detection
+                          or [x1, y1, x2, y2, conf, cls_id, flow_x, flow_y] with flow data
         """
         if car_detection is None:
             return
@@ -183,8 +184,9 @@ class State:
         # Add car detection to the list of highlighted cars
         self.highlighted_cars.append(car_detection)
 
-        # Calculate the center of the car
-        x1, y1, x2, y2, conf, cls_id = car_detection
+        # Extract the basic detection information (first 6 values)
+        # Handle both formats: with and without flow data
+        x1, y1, x2, y2, conf, cls_id = car_detection[:6]
         center_x = (x1 + x2) // 2
         center_y = (y1 + y2) // 2
 
