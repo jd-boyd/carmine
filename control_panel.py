@@ -26,7 +26,7 @@ class ControlPanel:
 
         if imgui.begin("Control Panel", True):
             imgui.text("Cameras")
-            
+
             # Video source selection (Camera or Video file)
             changed_source, self.state.use_video_file = imgui.checkbox(
                 "Use Video File", self.state.use_video_file
@@ -35,21 +35,21 @@ class ControlPanel:
                 self.state.save_config()
                 # Signal that source needs to be reinitialized
                 reinit_camera = True
-                
+
             if self.state.use_video_file:
                 # Video file selection
                 imgui.text("Video File Path:")
                 _, self.state.video_file_path = imgui.input_text(
                     "##videopath", self.state.video_file_path, 256
                 )
-                
+
                 imgui.same_line()
                 if imgui.button("Browse"):
                     # Here you would ideally use a file dialog
                     # Since file_dialog.py is commented out in the imports,
                     # we'll just allow manual path entry for now
                     print("Enter the video file path manually in the text field")
-                    
+
                 if imgui.button("Apply Video Source"):
                     if self.state.video_file_path:
                         self.state.save_config()
@@ -148,7 +148,7 @@ class ControlPanel:
                 if imgui.button("Save As"):
                     # If no config name is entered, use "current" as the default
                     config_name = self.config_name_input.strip() or "current"
-                    
+
                     # Save the config with the determined name
                     success = self.state.save_config(config_name)
                     if success:
@@ -156,11 +156,11 @@ class ControlPanel:
                             print("Configuration saved as 'current'")
                         else:
                             print(f"Saved configuration as '{config_name}'")
-                            
+
                         # Only clear the input field if it's not "current"
                         if config_name != "current":
                             self.config_name_input = ""
-                
+
                 # Add a small vertical space
                 imgui.dummy(0, 5)
 
@@ -381,13 +381,30 @@ class ControlPanel:
                 # Get position coordinates (now in field units)
                 x, y = self.state.poi_positions[i]
 
-                # Display the current value in field units
-                imgui.text(f"Point {i+1}: ({x:.1f}, {y:.1f})")
+                # Display point number and add input fields for X and Y
+                imgui.text(f"Pt {i+1}:")
 
-                # Indicate if we're waiting for this point to be set
-                if self.state.waiting_for_poi_point == i:
-                    imgui.same_line()
-                    imgui.text_colored("Click on camera or field view...", 1, 0.5, 0, 1)
+                # Create input fields for X coordinate
+                imgui.same_line()
+                imgui.set_next_item_width(60)  # Set width for X input
+                changed_x, new_x = imgui.input_float(f"X##poi_x_{i}", x, format="%.1f")
+
+                # Create input fields for Y coordinate
+                imgui.same_line()
+                imgui.set_next_item_width(60)  # Set width for Y input
+                changed_y, new_y = imgui.input_float(f"Y##poi_y_{i}", y, format="%.1f")
+
+                # Update the POI position if either value changed
+                if changed_x or changed_y:
+                    # Update with new values
+                    if changed_x:
+                        x = new_x
+                    if changed_y:
+                        y = new_y
+
+                    # Update the state with the new position
+                    self.state.set_poi_position(i, x, y)
+                    print(f"Updated Point {i+1} position to ({x:.1f}, {y:.1f})")
 
                 # Add Set button
                 imgui.same_line()
@@ -406,17 +423,134 @@ class ControlPanel:
                         self.state.waiting_for_camera2_point = -1
                         print(f"Click on either the camera view or field visualization to set POI {i+1}")
 
+
+                # Show closest car distance for this POI
+                if self.state.car_field_positions:
+                    # Find closest car to this POI
+                    poi_x, poi_y = self.state.poi_positions[i]
+                    min_distance = float('inf')
+                    closest_car = -1
+
+                    # Check each car's distance to this POI
+                    for car_idx, (car_x, car_y) in enumerate(self.state.car_field_positions):
+                        # Calculate Euclidean distance
+                        dist = ((car_x - poi_x)**2 + (car_y - poi_y)**2)**0.5
+                        if dist < min_distance:
+                            min_distance = dist
+                            closest_car = car_idx
+
+                    # Display distance if we found a closest car
+                    if closest_car >= 0:
+                        imgui.same_line()
+
+                        # Determine the color based on distance thresholds
+                        if len(self.state.poi_ranges) >= 3:
+                            safe_distance = self.state.poi_ranges[0]
+                            caution_distance = self.state.poi_ranges[1]
+                            danger_distance = self.state.poi_ranges[2]
+                        else:
+                            # Default values if not enough ranges defined
+                            safe_distance = 45
+                            caution_distance = 15
+                            danger_distance = 3
+
+                        # Set text color based on distance thresholds
+                        if min_distance > safe_distance:
+                            text_color = (0.0, 1.0, 0.0)  # Green - safe
+                        elif min_distance > caution_distance:
+                            text_color = (1.0, 1.0, 0.0)  # Yellow - caution
+                        elif min_distance > danger_distance:
+                            text_color = (1.0, 0.5, 0.0)  # Orange - approaching danger
+                        else:
+                            text_color = (1.0, 0.0, 0.0)  # Red - danger
+                        imgui.same_line()
+                        imgui.text_colored(f"Car {closest_car+1}: {min_distance:.1f}",
+                                         text_color[0], text_color[1], text_color[2], 1.0)
+
+                # Indicate if we're waiting for this point to be set
+                if self.state.waiting_for_poi_point == i:
+                    imgui.same_line()
+                    imgui.text_colored("Click on camera or field view...", 1, 0.5, 0, 1)
+
+
+
             imgui.separator()
 
             imgui.text("PoI Ranges")
-            for i in range(len(self.state.poi_ranges)):
 
-                changed_width, self.state.poi_ranges[i] = imgui.input_int(
-                    "Width", self.state.poi_ranges[i]
-                )
+            # Custom labels for each range
+            range_labels = ["Safe", "Warn", "!!!"]
 
-                if changed_width:
-                    self.state.save_config()
+            # Check if we have at least 3 values
+            while len(self.state.poi_ranges) < 3:
+                self.state.poi_ranges.append(0)  # Add default values if needed
+
+            # Display all three range fields on the same line
+            imgui.text(f"{range_labels[0]}:")
+            imgui.same_line()
+            imgui.set_next_item_width(60)
+            changed0, self.state.poi_ranges[0] = imgui.input_int(
+                f"##range_0", self.state.poi_ranges[0]
+            )
+
+            imgui.same_line()
+            imgui.text(f"{range_labels[1]}:")
+            imgui.same_line()
+            imgui.set_next_item_width(60)
+            changed1, self.state.poi_ranges[1] = imgui.input_int(
+                f"##range_1", self.state.poi_ranges[1]
+            )
+
+            imgui.same_line()
+            imgui.text(f"{range_labels[2]}:")
+            imgui.same_line()
+            imgui.set_next_item_width(60)
+            changed2, self.state.poi_ranges[2] = imgui.input_int(
+                f"##range_2", self.state.poi_ranges[2]
+            )
+
+            # # Add closest POI detection info if cars are present
+            # if self.state.car_field_positions:
+            #     # Find the closest POI to any car
+            #     closest_poi = -1
+            #     closest_car = -1
+            #     min_distance = float('inf')
+
+            #     # Check each POI against each car
+            #     for poi_idx, (poi_x, poi_y) in enumerate(self.state.poi_positions):
+            #         for car_idx, (car_x, car_y) in enumerate(self.state.car_field_positions):
+            #             # Calculate Euclidean distance
+            #             dist = ((car_x - poi_x)**2 + (car_y - poi_y)**2)**0.5
+            #             if dist < min_distance:
+            #                 min_distance = dist
+            #                 closest_poi = poi_idx
+            #                 closest_car = car_idx
+
+            #     # If we found a closest point, display its information
+            #     if closest_poi >= 0:
+            #         imgui.same_line()
+
+            #         # Determine the color based on distance thresholds
+            #         safe_distance = self.state.poi_ranges[0]
+            #         caution_distance = self.state.poi_ranges[1]
+            #         danger_distance = self.state.poi_ranges[2]
+
+            #         # Set text color based on distance thresholds
+            #         if min_distance > safe_distance:
+            #             text_color = (0.0, 1.0, 0.0)  # Green - safe
+            #         elif min_distance > caution_distance:
+            #             text_color = (1.0, 1.0, 0.0)  # Yellow - caution
+            #         elif min_distance > danger_distance:
+            #             text_color = (1.0, 0.5, 0.0)  # Orange - approaching danger
+            #         else:
+            #             text_color = (1.0, 0.0, 0.0)  # Red - danger
+
+            #         imgui.text_colored(f"Closest: Point {closest_poi+1} to Car {closest_car+1}: {min_distance:.1f}",
+            #                           text_color[0], text_color[1], text_color[2], 1.0)
+
+            # Save config if any field changed
+            if changed0 or changed1 or changed2:
+                self.state.save_config()
 
 
             imgui.separator()
