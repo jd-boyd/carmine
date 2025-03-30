@@ -373,119 +373,138 @@ def resize_with_aspect_ratio(image, width=None, height=None, inter=cv2.INTER_ARE
 
     return cv2.resize(image, dim, interpolation=inter)
 
-tracker = sv.ByteTrack()
-smoother = sv.DetectionsSmoother()
-mask_annotator = sv.MaskAnnotator()
-old_gray = None
-
-def process_frame_with_yolo(source, model, quad, conf_threshold=0.25, highlighted_car=None):
+class FrameProcessor:
     """
-    Process a single frame with YOLOv8 to detect cars
-
-    Args:
-        source: Video source
-        model: YOLOv8 model
-        quad: Points defining the field boundary
-        conf_threshold: Confidence threshold
-        highlighted_car: Optional [x1, y1, x2, y2, conf, cls_id] of a car to highlight
-
-    Returns:
-        Tuple of (processed frame with detections, list of car detections)
-        Car detections are in format [[x1, y1, x2, y2, conf, cls_id], ...]
+    Class to handle frame processing, detection, and visualization.
     """
-    p_start_time = time.time()
-    # Use the frame provided by the caller
-    frame = source.get_frame()
+    def __init__(self):
+        # Initialize tracking and visualization components
+        self.tracker = sv.ByteTrack()
+        self.smoother = sv.DetectionsSmoother()
+        self.mask_annotator = sv.MaskAnnotator()
+        self.old_gray = None
 
-    # Skip YOLO processing if this is a PlaceholderSource
-    if isinstance(source, sources.PlaceholderSource):
-        return frame, []
+        # COCO dataset vehicle classes (2: car, 5: bus, 7: truck)
+        self.vehicle_classes = [2, 7]
 
-    global old_gray
+    def process_frame(self, source, model, quad, conf_threshold=0.25):
+        """
+        Process a single frame to detect cars without visualization
 
-    of_frame = frame.copy()
-    mask = np.zeros_like(of_frame)
+        Args:
+            source: Video source
+            model: YOLO model
+            quad: Points defining the field boundary
+            conf_threshold: Confidence threshold
 
-    # Red cars, so red channel instead of normal gray scale conversion.
-    _, _, frame_gray = cv2.split(frame)
-    if not old_gray is None:
-        lk_params = dict(winSize=(15, 15), maxLevel=2, criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03))
-        p0 = cv2.goodFeaturesToTrack(old_gray, maxCorners=100, qualityLevel=0.3, minDistance=7, blockSize=7)
-        p1, st, err = cv2.calcOpticalFlowPyrLK(old_gray, frame_gray, p0, None, **lk_params)
+        Returns:
+            Tuple of (frame, detections, car_detections)
+            - frame: The original frame from the source
+            - detections: Supervision Detections object
+            - car_detections: List of [x1, y1, x2, y2, conf, cls_id] for vehicles
+        """
+        p_start_time = time.time()
 
-        good_new = p1[st == 1]
-        good_old = p0[st == 1]
-        p0 = good_new.reshape(-1, 1, 2)
+        # Get the frame from source
+        frame = source.get_frame()
 
-        # draw the tracks
-        for i, (new, old) in enumerate(zip(good_new, good_old)):
-            a, b = new.ravel()
-            c, d = old.ravel()
-            mask = cv2.line(mask, (int(a), int(b)), (int(c), int(d)), (0, 0, 255), 2)
-            of_frame = cv2.circle(of_frame, (int(a), int(b)), 5, (0, 0, 255), -1)
-            of_frame = cv2.add(of_frame, mask)
+        # Skip YOLO processing if this is a PlaceholderSource
+        if isinstance(source, sources.PlaceholderSource):
+            return frame, None, []
 
-    old_gray = frame_gray
+        # Apply optical flow visualization
+        of_frame = frame.copy()
+        mask = np.zeros_like(of_frame)
 
-    # YOLOv8 class names (COCO dataset)
-    class_names = model.names
+        # Red cars, so red channel instead of normal gray scale conversion
+        _, _, frame_gray = cv2.split(frame)
+        if self.old_gray is not None:
+            lk_params = dict(winSize=(15, 15), maxLevel=2, criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03))
+            p0 = cv2.goodFeaturesToTrack(self.old_gray, maxCorners=100, qualityLevel=0.3, minDistance=7, blockSize=7)
+            p1, st, err = cv2.calcOpticalFlowPyrLK(self.old_gray, frame_gray, p0, None, **lk_params)
 
-    # Car class ID in COCO dataset (2: car, 5: bus, 7: truck)
-    vehicle_classes = [2, 7]
+            good_new = p1[st == 1]
+            good_old = p0[st == 1]
+            p0 = good_new.reshape(-1, 1, 2)
 
-    # Get model prediction on the resized frame
-    results = model.predict(frame, imgsz=1920, conf=conf_threshold)[0]
+            # Draw the tracks
+            for i, (new, old) in enumerate(zip(good_new, good_old)):
+                a, b = new.ravel()
+                c, d = old.ravel()
+                mask = cv2.line(mask, (int(a), int(b)), (int(c), int(d)), (0, 0, 255), 2)
+                of_frame = cv2.circle(of_frame, (int(a), int(b)), 5, (0, 0, 255), -1)
+                of_frame = cv2.add(of_frame, mask)
 
-    polygon = np.array(quad)
-    polygon_zone = sv.PolygonZone(polygon=polygon)
+        self.old_gray = frame_gray
 
-    #results = model(frame)[0]
-    detections = sv.Detections.from_ultralytics(results)
-    #is_detections_in_zone = polygon_zone.trigger(detections)
+        # Get model prediction
+        results = model.predict(frame, imgsz=1920, conf=conf_threshold)[0]
 
-    mask = polygon_zone.trigger(detections=detections)
-    detections = detections[mask]
+        # Filter detections within the defined quadrilateral
+        polygon = np.array(quad)
+        polygon_zone = sv.PolygonZone(polygon=polygon)
 
-    detections = tracker.update_with_detections(detections)
-    detections = smoother.update_with_detections(detections)
+        detections = sv.Detections.from_ultralytics(results)
+        mask = polygon_zone.trigger(detections=detections)
+        detections = detections[mask]
 
-    annotated_image = mask_annotator.annotate(
-        scene=of_frame.copy(), detections=detections)
-    output_frame = annotated_image
+        # Apply tracking and smoothing
+        #detections = self.tracker.update_with_detections(detections)
+        #detections = self.smoother.update_with_detections(detections)
 
-    # List to store car detections (for click detection later)
-    car_detections = []
+        # Extract vehicle detections
+        car_detections = []
 
-    # Iterate through detections
-#    for det in results.boxes.data.cpu().numpy():
-    for i in range(len(detections.confidence)):
-        #x1, y1, x2, y2, conf, cls_id = det
-        x1, y1, x2, y2 = detections.xyxy[i]
-        conf = detections.confidence[i]
-        cls_id = detections.class_id[i]
-        cls_id = int(cls_id)
+        for i in range(len(detections.confidence)):
+            x1, y1, x2, y2 = detections.xyxy[i]
+            conf = detections.confidence[i]
+            cls_id = int(detections.class_id[i])
 
-        # Scale the coordinates back to the original image size
-        x1 = int(x1)
-        y1 = int(y1)
-        x2 = int(x2)
-        y2 = int(y2)
+            # Scale the coordinates to integers
+            x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
 
-        # Calculate center point of the bounding box
-        center_x = (x1 + x2) // 2
-        center_y = (y1 + y2) // 2
+            # Check if the detected object is a vehicle
+            if cls_id in self.vehicle_classes:
+                car_detections.append([x1, y1, x2, y2, conf, cls_id])
 
+        processing_time = (time.time() - p_start_time) * 1000
+        print(f"Processing took: {processing_time:.2f} ms")
 
-        # Check if the detected object is a vehicle
-        if cls_id in vehicle_classes:
-            # Store detection data for later use
-            car_detections.append([x1, y1, x2, y2, conf, cls_id])
+        # Return the original frame, detections, and car_detections
+        return of_frame, detections, car_detections
 
-            # Draw bounding box (yellow if highlighted, green otherwise)
-            box_color = (0, 255, 255) # if is_highlighted else (0, 255, 0)
+    def annotate_frame(self, frame, model, detections, car_detections):
+        """
+        Annotate a processed frame with detection visualizations
+
+        Args:
+            frame: The frame to annotate
+            model: YOLO model (for class names)
+            detections: Supervision Detections object
+            car_detections: List of car detections
+
+        Returns:
+            Annotated frame
+        """
+        if detections is None:
+            return frame
+
+        # Annotate with mask annotator
+        annotated_image = self.mask_annotator.annotate(
+            scene=frame.copy(), detections=detections)
+
+        # Add bounding boxes for vehicle detections
+        output_frame = annotated_image
+        class_names = model.names
+
+        for detection in car_detections:
+            x1, y1, x2, y2, conf, cls_id = detection
+
+            # Draw bounding box (yellow)
+            box_color = (0, 255, 255)
             cv2.rectangle(output_frame, (x1, y1), (x2, y2), box_color, 2)
 
-            # Display class name and confidence
+            # Get vehicle type
             vehicle_type = class_names[cls_id]
 
             # Prepare label with vehicle type and confidence
@@ -495,17 +514,34 @@ def process_frame_with_yolo(source, model, quad, conf_threshold=0.25, highlighte
             label_size, _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 2)
             y1_label = max(y1, label_size[1])
 
+            # Uncomment these if you want to add label text
             # Draw label background
-            # bg_color = (0, 255, 255) if is_highlighted else (0, 255, 0)
+            # bg_color = (0, 255, 255)
             # cv2.rectangle(output_frame, (x1, y1_label - label_size[1] - 5),
             #              (x1 + label_size[0], y1_label), bg_color, -1)
-
+            #
             # # Draw label text
             # cv2.putText(output_frame, label, (x1, y1_label - 5),
             #            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 2)
 
-    print("Processing took: ", (time.time() - p_start_time)*1000, "ms")
-    return output_frame, car_detections
+        return output_frame
+
+    def process_and_annotate_frame(self, source, model, quad, conf_threshold=0.25):
+        """
+        Process a frame and annotate it (convenience method combining the two steps)
+
+        Args:
+            source: Video source
+            model: YOLO model
+            quad: Points defining the field boundary
+            conf_threshold: Confidence threshold
+
+        Returns:
+            Tuple of (annotated_frame, car_detections)
+        """
+        frame, detections, car_detections = self.process_frame(source, model, quad, conf_threshold)
+        annotated_frame = self.annotate_frame(frame, model, detections, car_detections)
+        return annotated_frame, car_detections
 
 
 def main():
@@ -520,6 +556,9 @@ def main():
     #model=YOLO('yolo11n.pt')
     model=YOLO('yolov5nu.pt')
 
+    # Initialize frame processor
+    frame_processor = FrameProcessor()
+
     window = create_glfw_window()
     imgui.create_context()
     impl = GlfwRenderer(window)
@@ -532,18 +571,35 @@ def main():
     field_viz = FieldVisualization(app_state)
 
     # Initialize video sources with error handling
-    camera1_id = app_state.get_camera1_id()
-    try:
-        source_1 = sources.AVFSource(camera1_id if camera1_id is not None else 0)
-    except Exception as e:
-        print(f"Error initializing camera: {e}")
-        # Create a placeholder source with error message
-        source_1 = sources.PlaceholderSource(
-            width=1920,
-            height=1080,
-            message=f"Camera Error: {str(e)}"
-        )
+    # Check if using video file or camera
+    if app_state.use_video_file and app_state.video_file_path:
+        try:
+            source_1 = sources.VideoSource(app_state.video_file_path)
+            print(f"Using video file: {app_state.video_file_path}")
+        except Exception as e:
+            print(f"Error initializing video file: {e}")
+            # Create a placeholder source with error message
+            source_1 = sources.PlaceholderSource(
+                width=1920,
+                height=1080,
+                message=f"Video File Error: {str(e)}"
+            )
+    else:
+        # Use camera source
+        camera1_id = app_state.get_camera1_id()
+        try:
+            source_1 = sources.AVFSource(camera1_id if camera1_id is not None else 0)
+            print(f"Using camera: {camera1_id}")
+        except Exception as e:
+            print(f"Error initializing camera: {e}")
+            # Create a placeholder source with error message
+            source_1 = sources.PlaceholderSource(
+                width=1920,
+                height=1080,
+                message=f"Camera Error: {str(e)}"
+            )
 
+    # Secondary video source (no longer used actively but kept for reference)
     try:
         source_2 = sources.VideoSource('../AI_angle_2.mov')
     except Exception as e:
@@ -602,9 +658,12 @@ def main():
 
             # Only run YOLO processing if not paused
             if not app_state.processing_paused:
-                processed_frame, car_detections = process_frame_with_yolo(source_1, model,
-                                                                          app_state.camera1_points,
-                                                                          highlighted_car=False)
+                # Use the new FrameProcessor class
+                processed_frame, car_detections = frame_processor.process_and_annotate_frame(
+                    source_1,
+                    model,
+                    app_state.camera1_points
+                )
                 # Update detections only when processing is active
                 app_state.set_car_detections(car_detections)
             else:
@@ -621,27 +680,50 @@ def main():
 
             # Check if we need to reinitialize camera source
             if reinit_camera:
-                # Get the updated camera ID
-                camera1_id = app_state.get_camera1_id()
-                # Reinitialize camera source with the selected camera ID
-                try:
-                    new_source = sources.AVFSource(camera1_id if camera1_id is not None else 0)
-                    # Update the camera display with the new source
-                    source_1 = new_source
-                    camera_display.source = new_source
-                    print(f"Switched to camera {camera1_id}")
-                except Exception as e:
-                    error_message = f"Camera Error: {str(e)}"
-                    print(f"Error switching camera: {e}")
-                    # Create a placeholder source with the error message
-                    new_source = sources.PlaceholderSource(
-                        width=1920,
-                        height=1080,
-                        message=error_message
-                    )
-                    # Update the camera display with the placeholder source
-                    source_1 = new_source
-                    camera_display.source = new_source
+                # Check whether to use video file or camera
+                if app_state.use_video_file and app_state.video_file_path:
+                    # Use video file as source
+                    try:
+                        new_source = sources.VideoSource(app_state.video_file_path)
+                        # Update the camera display with the new source
+                        source_1 = new_source
+                        camera_display.source = new_source
+                        print(f"Switched to video file: {app_state.video_file_path}")
+                    except Exception as e:
+                        error_message = f"Video File Error: {str(e)}"
+                        print(f"Error switching to video file: {e}")
+                        # Create a placeholder source with the error message
+                        new_source = sources.PlaceholderSource(
+                            width=1920,
+                            height=1080,
+                            message=error_message
+                        )
+                        # Update the camera display with the placeholder source
+                        source_1 = new_source
+                        camera_display.source = new_source
+                else:
+                    # Use camera as source
+                    # Get the updated camera ID
+                    camera1_id = app_state.get_camera1_id()
+                    # Reinitialize camera source with the selected camera ID
+                    try:
+                        new_source = sources.AVFSource(camera1_id if camera1_id is not None else 0)
+                        # Update the camera display with the new source
+                        source_1 = new_source
+                        camera_display.source = new_source
+                        print(f"Switched to camera {camera1_id}")
+                    except Exception as e:
+                        error_message = f"Camera Error: {str(e)}"
+                        print(f"Error switching camera: {e}")
+                        # Create a placeholder source with the error message
+                        new_source = sources.PlaceholderSource(
+                            width=1920,
+                            height=1080,
+                            message=error_message
+                        )
+                        # Update the camera display with the placeholder source
+                        source_1 = new_source
+                        camera_display.source = new_source
 
             # Draw the field visualization
             field_viz.draw()

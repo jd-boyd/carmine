@@ -22,6 +22,10 @@ class State:
         
         # Track the currently loaded config name
         self.current_config_name = CURRENT_CONFIG_NAME
+        
+        # Video source type and path
+        self.use_video_file = False
+        self.video_file_path = ""
 
         # Point selection state
         self.waiting_for_camera1_point = -1  # Index of point we're waiting to set (-1 means not waiting)
@@ -216,7 +220,9 @@ class State:
                 'poi_ranges': self.poi_ranges,
                 'c1_show_carbox': self.c1_show_carbox,
                 'c1_show_mines': self.c1_show_mines,
-                'processing_paused': self.processing_paused
+                'processing_paused': self.processing_paused,
+                'use_video_file': self.use_video_file,
+                'video_file_path': self.video_file_path
             }
 
             # Save to database
@@ -293,6 +299,12 @@ class State:
                 self.c1_show_mines = config['c1_show_mines']
             if 'processing_paused' in config:
                 self.processing_paused = config['processing_paused']
+                
+            # Load video file settings if available
+            if 'use_video_file' in config:
+                self.use_video_file = config['use_video_file']
+            if 'video_file_path' in config:
+                self.video_file_path = config['video_file_path']
 
             # Update current config name to match what was loaded
             self.current_config_name = config_name

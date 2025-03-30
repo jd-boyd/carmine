@@ -26,13 +26,46 @@ class ControlPanel:
 
         if imgui.begin("Control Panel", True):
             imgui.text("Cameras")
-            changed1, self.state.selected_camera1 = imgui.combo(
-                "Camera 1", self.state.selected_camera1, [c[1] for c in self.state.camera_list]
+            
+            # Video source selection (Camera or Video file)
+            changed_source, self.state.use_video_file = imgui.checkbox(
+                "Use Video File", self.state.use_video_file
             )
-            if changed1:
+            if changed_source:
                 self.state.save_config()
-                # Signal that camera source needs to be reinitialized
+                # Signal that source needs to be reinitialized
                 reinit_camera = True
+                
+            if self.state.use_video_file:
+                # Video file selection
+                imgui.text("Video File Path:")
+                _, self.state.video_file_path = imgui.input_text(
+                    "##videopath", self.state.video_file_path, 256
+                )
+                
+                imgui.same_line()
+                if imgui.button("Browse"):
+                    # Here you would ideally use a file dialog
+                    # Since file_dialog.py is commented out in the imports,
+                    # we'll just allow manual path entry for now
+                    print("Enter the video file path manually in the text field")
+                    
+                if imgui.button("Apply Video Source"):
+                    if self.state.video_file_path:
+                        self.state.save_config()
+                        reinit_camera = True
+                        print(f"Video source set to: {self.state.video_file_path}")
+                    else:
+                        print("Please enter a video file path")
+            else:
+                # Camera selection dropdown
+                changed1, self.state.selected_camera1 = imgui.combo(
+                    "Camera 1", self.state.selected_camera1, [c[1] for c in self.state.camera_list]
+                )
+                if changed1:
+                    self.state.save_config()
+                    # Signal that camera source needs to be reinitialized
+                    reinit_camera = True
 
             imgui.separator()
 
@@ -97,6 +130,10 @@ class ControlPanel:
                         success = self.state.load_config(config_name)
                         if success:
                             print(f"Loaded configuration '{config_name}'")
+                            # Set the config name input field to the loaded config name
+                            # (Don't set it if the config name is "current")
+                            if config_name != "current":
+                                self.config_name_input = config_name
 
                     imgui.same_line()
                     imgui.text(f"{config_name} ({timestamp_str}){camera_info}")
@@ -109,15 +146,23 @@ class ControlPanel:
 
                 imgui.same_line()
                 if imgui.button("Save As"):
-                    if self.config_name_input.strip():
-                        # Save current config with new name
-                        success = self.state.save_config(self.config_name_input)
-                        if success:
-                            print(f"Saved configuration as '{self.config_name_input}'")
-                            # Clear input field after successful save
+                    # If no config name is entered, use "current" as the default
+                    config_name = self.config_name_input.strip() or "current"
+                    
+                    # Save the config with the determined name
+                    success = self.state.save_config(config_name)
+                    if success:
+                        if config_name == "current":
+                            print("Configuration saved as 'current'")
+                        else:
+                            print(f"Saved configuration as '{config_name}'")
+                            
+                        # Only clear the input field if it's not "current"
+                        if config_name != "current":
                             self.config_name_input = ""
-                    else:
-                        print("Please enter a configuration name")
+                
+                # Add a small vertical space
+                imgui.dummy(0, 5)
 
                 # Options to import/export from files
                 imgui.separator()
@@ -225,35 +270,11 @@ class ControlPanel:
                     else:
                         imgui.open_popup("Delete Config")
 
-            # Legacy Quick-access config buttons
+            # Quick-access config buttons
             imgui.separator()
             if imgui.button("Reload Current"):
                 self.state.load_config()
                 print("Configuration reloaded")
-
-            imgui.same_line()
-            if imgui.button("Load Config 1"):
-                try:
-                    # Import the camera config to the database
-                    success = config_db.import_config_from_file("camera_1", "camera_configs/camera_1.json")
-                    if success:
-                        # Load it
-                        self.state.load_config("camera_1")
-                        print("Configuration 1 loaded successfully")
-                except Exception as e:
-                    print(f"Error loading configuration 1: {e}")
-
-            imgui.same_line()
-            if imgui.button("Load Config 2"):
-                try:
-                    # Import the camera config to the database
-                    success = config_db.import_config_from_file("camera_2", "camera_configs/camera_2.json")
-                    if success:
-                        # Load it
-                        self.state.load_config("camera_2")
-                        print("Configuration 2 loaded successfully")
-                except Exception as e:
-                    print(f"Error loading configuration 2: {e}")
 
             imgui.same_line()
             if imgui.button("Reset to Defaults"):
