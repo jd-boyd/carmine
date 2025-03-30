@@ -1,27 +1,44 @@
 import OpenGL.GL as gl
-import sys
 import cv2
 import numpy as np
 import subprocess
 import re
 
-import time
 
 
 def create_opengl_texture(image):
     texture_id = gl.glGenTextures(1)
     gl.glBindTexture(gl.GL_TEXTURE_2D, texture_id)
     gl.glTexParameteri(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_MIN_FILTER, gl.GL_LINEAR)
-#    gl.glTexParameteri(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_MAG_FILTER, gl.GL_LINEAR)
-    gl.glTexImage2D(gl.GL_TEXTURE_2D, 0, gl.GL_RGB, image.shape[1], image.shape[0], 0, gl.GL_BGR, gl.GL_UNSIGNED_BYTE, image)
+    #    gl.glTexParameteri(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_MAG_FILTER, gl.GL_LINEAR)
+    gl.glTexImage2D(
+        gl.GL_TEXTURE_2D,
+        0,
+        gl.GL_RGB,
+        image.shape[1],
+        image.shape[0],
+        0,
+        gl.GL_BGR,
+        gl.GL_UNSIGNED_BYTE,
+        image,
+    )
     return texture_id
 
 
 def update_opengl_texture(texture_id, image):
     gl.glBindTexture(gl.GL_TEXTURE_2D, texture_id)
-    gl.glTexImage2D(gl.GL_TEXTURE_2D, 0, gl.GL_RGB, image.shape[1], image.shape[0], 0, gl.GL_BGR, gl.GL_UNSIGNED_BYTE, image)
+    gl.glTexImage2D(
+        gl.GL_TEXTURE_2D,
+        0,
+        gl.GL_RGB,
+        image.shape[1],
+        image.shape[0],
+        0,
+        gl.GL_BGR,
+        gl.GL_UNSIGNED_BYTE,
+        image,
+    )
     gl.glBindTexture(gl.GL_TEXTURE_2D, 0)
-
 
 
 class Source:
@@ -48,7 +65,9 @@ class Source:
 class PlaceholderSource(Source):
     """Source that provides a placeholder image with text when no other source is available"""
 
-    def __init__(self, width=640, height=480, message="No video source available", state=None):
+    def __init__(
+        self, width=640, height=480, message="No video source available", state=None
+    ):
         self._width = width
         self._height = height
         self.message = message
@@ -87,13 +106,15 @@ class PlaceholderSource(Source):
             font,
             font_scale,
             font_color,
-            font_thickness
+            font_thickness,
         )
 
         # Add helper text below main message
         helper_message = "Select a camera or video file to begin"
         helper_font_scale = 0.7
-        helper_text_size = cv2.getTextSize(helper_message, font, helper_font_scale, font_thickness)[0]
+        helper_text_size = cv2.getTextSize(
+            helper_message, font, helper_font_scale, font_thickness
+        )[0]
         helper_x = int((self._width - helper_text_size[0]) / 2)
         helper_y = text_y + 40
 
@@ -104,9 +125,8 @@ class PlaceholderSource(Source):
             font,
             helper_font_scale,
             font_color,
-            font_thickness
+            font_thickness,
         )
-
 
     def set_message(self, message):
         """Update the placeholder message and redraw the frame"""
@@ -131,7 +151,6 @@ class StillSource(Source):
         self._width = self.frame.shape[1]
         self._height = self.frame.shape[0]
         self.texture_id = create_opengl_texture(self.frame)
-
 
 
 class VideoSource(Source):
@@ -200,7 +219,7 @@ def enumerate_avf_sources():
             ["ffmpeg", "-list_devices", "true", "-f", "avfoundation", "-i", "dummy"],
             capture_output=True,
             text=True,
-            check=False  # Don't raise exception on non-zero exit code
+            check=False,  # Don't raise exception on non-zero exit code
         )
 
         # The command will have an error code since it doesn't actually open a device,
@@ -225,7 +244,7 @@ def enumerate_avf_sources():
             # If we're in the video section, parse the device information
             if video_section:
                 # Match pattern like [0] Device Name
-                match = re.match(r'.*\[(\d+)\]\s+(.*)', line)
+                match = re.match(r".*\[(\d+)\]\s+(.*)", line)
                 if match:
                     device_index = int(match.group(1))
                     device_name = match.group(2).strip()
@@ -239,7 +258,6 @@ def enumerate_avf_sources():
 
 
 class AVFSource(VideoSource):
-
     def __init__(self, idx, state=None):
         self.frame_counter = 0
         self.cap = cv2.VideoCapture(idx, cv2.CAP_AVFOUNDATION)
@@ -255,7 +273,6 @@ class AVFSource(VideoSource):
         self._width = frame.shape[1]
         self._height = frame.shape[0]
         self.texture_id = create_opengl_texture(frame)
-
 
     def get_frame(self):
         """

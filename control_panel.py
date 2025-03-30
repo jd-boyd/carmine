@@ -1,10 +1,12 @@
 import imgui
 import config_db
 
+
 class ControlPanel:
     """
     UI component for displaying and manipulating application state.
     """
+
     def __init__(self, state, field_viz, camera_display):
         self.state = state
         self.field_viz = field_viz
@@ -60,7 +62,9 @@ class ControlPanel:
             else:
                 # Camera selection dropdown
                 changed1, self.state.selected_camera1 = imgui.combo(
-                    "Camera", self.state.selected_camera1, [c[1] for c in self.state.camera_list]
+                    "Camera",
+                    self.state.selected_camera1,
+                    [c[1] for c in self.state.camera_list],
                 )
                 if changed1:
                     self.state.save_config()
@@ -68,7 +72,6 @@ class ControlPanel:
                     reinit_camera = True
 
             imgui.separator()
-
 
             # Processing Control
             imgui.text("Processing Control")
@@ -106,7 +109,10 @@ class ControlPanel:
 
             imgui.text_colored(
                 f"Current: {self.state.current_config_name} (Camera: {current_camera})",
-                0.2, 0.8, 0.2, 1.0
+                0.2,
+                0.8,
+                0.2,
+                1.0,
             )
 
             # Load configuration section
@@ -122,7 +128,11 @@ class ControlPanel:
                     # Get camera information for this config
                     config_data = config_db.load_config_from_db(config_name)
                     camera_info = ""
-                    if config_data and 'camera_name' in config_data and config_data['camera_name']:
+                    if (
+                        config_data
+                        and "camera_name" in config_data
+                        and config_data["camera_name"]
+                    ):
                         camera_info = f" - Camera: {config_data['camera_name']}"
 
                     # Create a button to load this config
@@ -179,12 +189,17 @@ class ControlPanel:
                         )
 
                         if imgui.button("Import", 120, 0):
-                            if self.import_config_name.strip() and self.import_file_path.strip():
+                            if (
+                                self.import_config_name.strip()
+                                and self.import_file_path.strip()
+                            ):
                                 success = config_db.import_config_from_file(
                                     self.import_config_name, self.import_file_path
                                 )
                                 if success:
-                                    print(f"Imported configuration '{self.import_config_name}' from {self.import_file_path}")
+                                    print(
+                                        f"Imported configuration '{self.import_config_name}' from {self.import_file_path}"
+                                    )
                                     self.import_config_name = ""
                                     self.import_file_path = ""
                                     imgui.close_current_popup()
@@ -216,13 +231,18 @@ class ControlPanel:
                         )
 
                         if imgui.button("Export", 120, 0):
-                            if 0 <= self.export_config_index < len(config_names) and self.export_file_path.strip():
+                            if (
+                                0 <= self.export_config_index < len(config_names)
+                                and self.export_file_path.strip()
+                            ):
                                 selected_config = config_names[self.export_config_index]
                                 success = config_db.export_config_to_file(
                                     selected_config, self.export_file_path
                                 )
                                 if success:
-                                    print(f"Exported configuration '{selected_config}' to {self.export_file_path}")
+                                    print(
+                                        f"Exported configuration '{selected_config}' to {self.export_file_path}"
+                                    )
                                     imgui.close_current_popup()
                             else:
                                 print("Please select a config and enter a file path")
@@ -251,10 +271,16 @@ class ControlPanel:
                         if imgui.button("Delete", 120, 0):
                             if 0 <= self.delete_config_index < len(config_names):
                                 selected_config = config_names[self.delete_config_index]
-                                if selected_config != "current":  # Prevent deleting default config
-                                    success = config_db.delete_config_from_db(selected_config)
+                                if (
+                                    selected_config != "current"
+                                ):  # Prevent deleting default config
+                                    success = config_db.delete_config_from_db(
+                                        selected_config
+                                    )
                                     if success:
-                                        print(f"Deleted configuration '{selected_config}'")
+                                        print(
+                                            f"Deleted configuration '{selected_config}'"
+                                        )
                                         self.delete_config_index = 0
                                         imgui.close_current_popup()
                                 else:
@@ -279,7 +305,9 @@ class ControlPanel:
             imgui.same_line()
             if imgui.button("Reset to Defaults"):
                 if imgui.begin_popup_modal("Confirm Reset", True):
-                    imgui.text("Are you sure you want to reset all configuration to defaults?")
+                    imgui.text(
+                        "Are you sure you want to reset all configuration to defaults?"
+                    )
                     imgui.text("This action cannot be undone.")
                     imgui.separator()
 
@@ -298,7 +326,6 @@ class ControlPanel:
                     imgui.open_popup("Confirm Reset")
 
             imgui.separator()
-
 
             imgui.text("Field Size")
             changed_width, self.state.field_size[0] = imgui.input_int(
@@ -323,40 +350,42 @@ class ControlPanel:
             imgui.text("Camera1 Points:")
             if imgui.is_item_hovered():
                 imgui.begin_tooltip()
-                imgui.text("These points define the field boundaries in the camera view.")
+                imgui.text(
+                    "These points define the field boundaries in the camera view."
+                )
                 imgui.text("Points should form a quadrilateral in clockwise order:")
                 imgui.text("1: Top-left, 2: Top-right, 3: Bottom-right, 4: Bottom-left")
                 imgui.end_tooltip()
-            
+
             # Display camera points in 2x2 grid layout
             for i in range(4):
                 # Start a new row for points 3 and 4
                 if i == 2:
                     imgui.dummy(0, 5)  # Add a little vertical spacing
-                
+
                 # Start a new line for points 0 and 2 (first points in each row)
                 if i % 2 == 0:
                     pass  # Start at the beginning of a new line
                 else:
                     # For points 1 and 3, add some space after the previous point
                     imgui.same_line(spacing=50)
-                
+
                 # Get current coordinates
                 x, y = self.state.camera1_points[i]
-                    
+
                 # Display point number
-                imgui.text(f"Pt {i+1}:")
-                
+                imgui.text(f"Pt {i + 1}:")
+
                 # Create input field for X coordinate
                 imgui.same_line()
                 imgui.set_next_item_width(60)  # Set width for X input
                 changed_x, new_x = imgui.input_int(f"X##cam_x_{i}", x)
-                
+
                 # Create input field for Y coordinate
                 imgui.same_line()
                 imgui.set_next_item_width(60)  # Set width for Y input
                 changed_y, new_y = imgui.input_int(f"Y##cam_y_{i}", y)
-                
+
                 # Update the point if either value changed
                 if changed_x or changed_y:
                     # Update with new values
@@ -364,16 +393,18 @@ class ControlPanel:
                         x = new_x
                     if changed_y:
                         y = new_y
-                    
+
                     # Update the state with the new position
                     self.state.set_camera_point(1, i, x, y)
-                    print(f"Updated Camera 1 Point {i+1} position to ({x}, {y})")
+                    print(f"Updated Camera 1 Point {i + 1} position to ({x}, {y})")
 
                 # Add Set button (for clicking to set position)
                 imgui.same_line()
-                
+
                 # Change button color/text if this is the active point waiting for selection
-                button_text = "Cancel" if self.state.waiting_for_camera1_point == i else "Click"
+                button_text = (
+                    "Cancel" if self.state.waiting_for_camera1_point == i else "Click"
+                )
                 if imgui.button(f"{button_text}##cam1_{i}", width=45):
                     if self.state.waiting_for_camera1_point == i:
                         # Cancel selection mode
@@ -383,13 +414,12 @@ class ControlPanel:
                         self.state.waiting_for_camera1_point = i
                         # Reset any other waiting state
                         self.state.waiting_for_camera2_point = -1
-                        print(f"Click on the image to set Camera 1 Point {i+1}")
-                
+                        print(f"Click on the image to set Camera 1 Point {i + 1}")
+
                 # Indicate if we're waiting for this point to be set
                 if self.state.waiting_for_camera1_point == i:
                     imgui.same_line()
                     imgui.text_colored("Click on image...", 1, 0.5, 0, 1)
-
 
             imgui.separator()
 
@@ -397,14 +427,21 @@ class ControlPanel:
 
             imgui.text(f"Scale: {self.camera_display.scale}")
 
-            imgui.text("Cursor pos WS: ({}, {})".format(*self.camera_display.get_mouse_in_window_space()))
+            imgui.text(
+                "Cursor pos WS: ({}, {})".format(
+                    *self.camera_display.get_mouse_in_window_space()
+                )
+            )
 
-            imgui.text("Cursor pos IS: ({}, {})".format(*self.camera_display.get_mouse_in_image_space()))
+            imgui.text(
+                "Cursor pos IS: ({}, {})".format(
+                    *self.camera_display.get_mouse_in_image_space()
+                )
+            )
 
             # Get cursor position in field space and format with 2 decimal places
             field_x, field_y = self.camera_display.get_mouse_in_field_space()
             imgui.text("Cursor pos FS: ({:.2f}, {:.2f})".format(field_x, field_y))
-
 
             changed, checked = imgui.checkbox("Car box", self.state.c1_show_carbox)
             if changed:
@@ -418,14 +455,13 @@ class ControlPanel:
 
             imgui.separator()
 
-
             imgui.text("Points of Interest")
             for i in range(len(self.state.poi_positions)):
                 # Get position coordinates (now in field units)
                 x, y = self.state.poi_positions[i]
 
                 # Display point number and add input fields for X and Y
-                imgui.text(f"Pt {i+1}:")
+                imgui.text(f"Pt {i + 1}:")
 
                 # Create input fields for X coordinate
                 imgui.same_line()
@@ -447,13 +483,15 @@ class ControlPanel:
 
                     # Update the state with the new position
                     self.state.set_poi_position(i, x, y)
-                    print(f"Updated Point {i+1} position to ({x:.1f}, {y:.1f})")
+                    print(f"Updated Point {i + 1} position to ({x:.1f}, {y:.1f})")
 
                 # Add Set button
                 imgui.same_line()
 
                 # Change button text if this is the active point waiting for selection
-                button_text = "Cancel" if self.state.waiting_for_poi_point == i else "Set"
+                button_text = (
+                    "Cancel" if self.state.waiting_for_poi_point == i else "Set"
+                )
                 if imgui.button(f"{button_text}##poi_{i}"):
                     if self.state.waiting_for_poi_point == i:
                         # Cancel selection mode
@@ -464,31 +502,35 @@ class ControlPanel:
                         # Reset any other waiting state
                         self.state.waiting_for_camera1_point = -1
                         self.state.waiting_for_camera2_point = -1
-                        print(f"Click on either the camera view or field visualization to set POI {i+1}")
-
+                        print(
+                            f"Click on either the camera view or field visualization to set POI {i + 1}"
+                        )
 
                 # Show closest car distance for this POI
                 if self.state.car_field_positions:
                     # Get closest car from cached data
                     closest_info = self.state.get_closest_car_to_poi(i)
-                    
+
                     # Display distance if we found a closest car
                     if closest_info:
                         closest_car, min_distance = closest_info
                         imgui.same_line()
-                        
+
                         # Get color based on distance from cache
                         text_color = self.state.get_poi_distance_color(min_distance)
                         imgui.same_line()
-                        imgui.text_colored(f"Car {closest_car+1}: {min_distance:.1f}",
-                                         text_color[0], text_color[1], text_color[2], 1.0)
+                        imgui.text_colored(
+                            f"Car {closest_car + 1}: {min_distance:.1f}",
+                            text_color[0],
+                            text_color[1],
+                            text_color[2],
+                            1.0,
+                        )
 
                 # Indicate if we're waiting for this point to be set
                 if self.state.waiting_for_poi_point == i:
                     imgui.same_line()
                     imgui.text_colored("Click on camera or field view...", 1, 0.5, 0, 1)
-
-
 
             imgui.separator()
 
@@ -506,7 +548,7 @@ class ControlPanel:
             imgui.same_line()
             imgui.set_next_item_width(60)
             changed0, self.state.poi_ranges[0] = imgui.input_int(
-                f"##range_0", self.state.poi_ranges[0]
+                "##range_0", self.state.poi_ranges[0]
             )
 
             imgui.same_line()
@@ -514,7 +556,7 @@ class ControlPanel:
             imgui.same_line()
             imgui.set_next_item_width(60)
             changed1, self.state.poi_ranges[1] = imgui.input_int(
-                f"##range_1", self.state.poi_ranges[1]
+                "##range_1", self.state.poi_ranges[1]
             )
 
             imgui.same_line()
@@ -522,29 +564,33 @@ class ControlPanel:
             imgui.same_line()
             imgui.set_next_item_width(60)
             changed2, self.state.poi_ranges[2] = imgui.input_int(
-                f"##range_2", self.state.poi_ranges[2]
+                "##range_2", self.state.poi_ranges[2]
             )
 
             # Add closest POI detection info if cars are present
             if self.state.car_field_positions:
                 # Get the closest POI-car pair from cached data
                 closest_pair = self.state.get_closest_poi_car_pair()
-                
+
                 # If we found a closest pair, display its information
                 if closest_pair:
                     closest_poi, closest_car, min_distance = closest_pair
                     imgui.same_line()
-                    
+
                     # Get color based on distance from cache
                     text_color = self.state.get_poi_distance_color(min_distance)
-                    
-                    imgui.text_colored(f"Closest: Point {closest_poi+1} to Car {closest_car+1}: {min_distance:.1f}", 
-                                      text_color[0], text_color[1], text_color[2], 1.0)
+
+                    imgui.text_colored(
+                        f"Closest: Point {closest_poi + 1} to Car {closest_car + 1}: {min_distance:.1f}",
+                        text_color[0],
+                        text_color[1],
+                        text_color[2],
+                        1.0,
+                    )
 
             # Save config if any field changed
             if changed0 or changed1 or changed2:
                 self.state.save_config()
-
 
             imgui.separator()
 
@@ -555,7 +601,7 @@ class ControlPanel:
 
             # Display number of detected cars
             imgui.text(f"Detected cars: {len(car_positions)}")
-            
+
             # Add Optical Flow Scaling slider
             imgui.text("Optical Flow")
             imgui.set_next_item_width(200)
@@ -564,7 +610,7 @@ class ControlPanel:
             )
             if changed_flow_scale:
                 self.state.save_config()
-            
+
             if imgui.is_item_hovered():
                 imgui.begin_tooltip()
                 imgui.text("Adjust the optical flow scaling factor.")
@@ -576,32 +622,43 @@ class ControlPanel:
             # If we have cars, show their positions
             if car_positions:
                 # Create a collapsible section for car details
-                if imgui.collapsing_header("Car Positions", flags=imgui.TREE_NODE_DEFAULT_OPEN):
+                if imgui.collapsing_header(
+                    "Car Positions", flags=imgui.TREE_NODE_DEFAULT_OPEN
+                ):
                     # Show each car's position
                     for i, (car_x, car_y) in enumerate(car_positions):
                         if i < 10:  # Limit to max cars
                             # Car positions are already in field units now
                             # Use the same colors as in field visualization
                             if i < 10:
-                                r, g, b, a = 0, 0, 0, 0
-                                if i == 0: r, g, b = 0, 1, 1    # Cyan
-                                elif i == 1: r, g, b = 1, 0.5, 0  # Orange
-                                elif i == 2: r, g, b = 0, 1, 0    # Green
-                                elif i == 3: r, g, b = 1, 0, 1    # Magenta
-                                elif i == 4: r, g, b = 1, 1, 0    # Yellow
-                                elif i == 5: r, g, b = 0, 0, 1    # Blue
-                                elif i == 6: r, g, b = 1, 0, 0    # Red
-                                elif i == 7: r, g, b = 0.5, 0.5, 1  # Light blue
-                                elif i == 8: r, g, b = 0.5, 1, 0.5  # Light green
-                                elif i == 9: r, g, b = 1, 0.5, 0.5  # Light red
+                                r, g, b = 0, 0, 0
+                                if i == 0:
+                                    r, g, b = 0, 1, 1  # Cyan
+                                elif i == 1:
+                                    r, g, b = 1, 0.5, 0  # Orange
+                                elif i == 2:
+                                    r, g, b = 0, 1, 0  # Green
+                                elif i == 3:
+                                    r, g, b = 1, 0, 1  # Magenta
+                                elif i == 4:
+                                    r, g, b = 1, 1, 0  # Yellow
+                                elif i == 5:
+                                    r, g, b = 0, 0, 1  # Blue
+                                elif i == 6:
+                                    r, g, b = 1, 0, 0  # Red
+                                elif i == 7:
+                                    r, g, b = 0.5, 0.5, 1  # Light blue
+                                elif i == 8:
+                                    r, g, b = 0.5, 1, 0.5  # Light green
+                                elif i == 9:
+                                    r, g, b = 1, 0.5, 0.5  # Light red
 
                                 # Show colored information for each car
-                                imgui.text_colored(f"Car {i+1}:", r, g, b, 1)
+                                imgui.text_colored(f"Car {i + 1}:", r, g, b, 1)
                                 imgui.same_line()
                                 imgui.text(f"({car_x:.1f}, {car_y:.1f}) units")
             else:
                 imgui.text("No cars detected")
-
 
             imgui.end()
 

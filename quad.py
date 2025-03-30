@@ -1,6 +1,7 @@
 import numpy as np
 import cv2
 
+
 class Quad:
     """
     A class representing a quadrilateral with methods to transform points to UV coordinates.
@@ -24,8 +25,13 @@ class Quad:
             raise ValueError("Quad must be initialized with exactly 4 points")
 
         self.quad_points = quad_points
-        self.uv_coords = [(0,0), (0,1), (1,1), (1,0)]
-        self.field_coords = [(0,0), (0,field_size[1]), (field_size[0],field_size[1]), (field_size[0],0)]
+        self.uv_coords = [(0, 0), (0, 1), (1, 1), (1, 0)]
+        self.field_coords = [
+            (0, 0),
+            (0, field_size[1]),
+            (field_size[0], field_size[1]),
+            (field_size[0], 0),
+        ]
         self.field_size = field_size
 
         self.src_points = np.array(self.quad_points, dtype=np.float32)
@@ -41,8 +47,9 @@ class Quad:
         # RANSAC method helps eliminate outliers
         self.H, _ = cv2.findHomography(self.src_points, self.uv_points, cv2.RANSAC, 5.0)
 
-        self.Hf, _ = cv2.findHomography(self.src_points, self.field_points, cv2.RANSAC, 5.0)
-
+        self.Hf, _ = cv2.findHomography(
+            self.src_points, self.field_points, cv2.RANSAC, 5.0
+        )
 
     def point_to_uv(self, point_x, point_y):
         """
@@ -108,7 +115,6 @@ class Quad:
             return None
 
         return (x, y)
-
 
     def point_to_field(self, point_x, point_y):
         """

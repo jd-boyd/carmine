@@ -13,10 +13,11 @@ import state
 from state import State
 from quad import Quad
 
+
 class TestState(unittest.TestCase):
     def setUp(self):
         # Create a temporary config file for testing
-        self.temp_config = tempfile.NamedTemporaryFile(delete=False, suffix='.json')
+        self.temp_config = tempfile.NamedTemporaryFile(delete=False, suffix=".json")
         self.temp_config.close()  # Close the file so it can be reopened on Windows
 
         # Store the original config file path
@@ -44,18 +45,18 @@ class TestState(unittest.TestCase):
         """Test that State initializes with appropriate values"""
         # First test that the camera list is set correctly
         self.assertEqual(self.state.camera_list, self.camera_list)
-        
+
         # Explicitly reset the state to defaults for testing
         self.state.reset_config()
-        
+
         # After reset, verify expected values
         # Test camera points
         self.assertEqual(len(self.state.camera1_points), 4)
         self.assertEqual(self.state.camera1_points[0], [0, 0])
-        
+
         # Test field size
         self.assertEqual(self.state.field_size, [100, 300])
-        
+
         # Test waiting states
         self.assertEqual(self.state.waiting_for_camera1_point, -1)
         self.assertEqual(self.state.waiting_for_poi_point, -1)
@@ -87,7 +88,11 @@ class TestState(unittest.TestCase):
         # Test with invalid camera number - should be ignored
         original_value = self.state.camera1_points[0].copy()
         self.state.set_camera_point(3, 0, 500, 600)
-        self.assertEqual(self.state.camera1_points[0], original_value, "Invalid camera number should not change points")
+        self.assertEqual(
+            self.state.camera1_points[0],
+            original_value,
+            "Invalid camera number should not change points",
+        )
 
     def test_poi_management(self):
         """Test setting and getting POI positions"""
@@ -150,7 +155,7 @@ class TestState(unittest.TestCase):
 
         # Set valid quad points to allow field position calculation
         self.state.camera1_points = [[0, 0], [0, 100], [100, 100], [100, 0]]
-        
+
         # Create a new camera1_quad with valid points
         self.state.camera1_quad = Quad(self.state.camera1_points)
 
@@ -169,8 +174,8 @@ class TestState(unittest.TestCase):
     def test_camera_to_field_position_exists(self):
         """Test that the camera_to_field_position method exists and is callable"""
         # We'll just verify that the method exists and is callable
-        self.assertTrue(hasattr(self.state, 'camera_to_field_position'))
-        self.assertTrue(callable(getattr(self.state, 'camera_to_field_position')))
+        self.assertTrue(hasattr(self.state, "camera_to_field_position"))
+        self.assertTrue(callable(getattr(self.state, "camera_to_field_position")))
 
     def test_calculate_poi_distances(self):
         """Test calculation of distances between car and POIs"""
@@ -184,15 +189,15 @@ class TestState(unittest.TestCase):
 
         # Set POI positions for testing (now in field coordinates)
         self.state.poi_positions = [
-            (0, 0),     # Corner - distance should be sqrt(50^2 + 50^2) = ~70.71
-            (100, 100), # Opposite corner - same distance
-            (50, 0),    # Middle of one edge - distance = 50
+            (0, 0),  # Corner - distance should be sqrt(50^2 + 50^2) = ~70.71
+            (100, 100),  # Opposite corner - same distance
+            (50, 0),  # Middle of one edge - distance = 50
             (50, 100),  # Middle of opposite edge - distance = 50
-            (60, 60),   # Near the car - distance = sqrt(10^2 + 10^2) = ~14.14
-            (0, 50),    # Middle of left edge - distance = 50
-            (50, 50),   # Same position as car - distance = 0
-            (40, 40),   # Also near the car
-            (90, 90)    # Further away
+            (60, 60),  # Near the car - distance = sqrt(10^2 + 10^2) = ~14.14
+            (0, 50),  # Middle of left edge - distance = 50
+            (50, 50),  # Same position as car - distance = 0
+            (40, 40),  # Also near the car
+            (90, 90),  # Further away
         ]
 
         # Calculate distances
@@ -215,5 +220,6 @@ class TestState(unittest.TestCase):
         near_poi = next((idx, dist) for idx, dist in distances if idx == 4)
         self.assertAlmostEqual(near_poi[1], 14.14, delta=0.1)
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     unittest.main()

@@ -5,20 +5,15 @@ import glfw
 import cv2
 import OpenGL.GL as gl
 import numpy as np
-import json
-import os
-import sys
 from ultralytics import YOLO
 import supervision as sv
 
 import sources
-from sources import create_opengl_texture, update_opengl_texture
 from quad import Quad
 from state import State
-import config_db
 from field_visualization import FieldVisualization
 from control_panel import ControlPanel
-#from file_dialog import open_file_dialog, save_file_dialog
+# from file_dialog import open_file_dialog, save_file_dialog
 
 
 class CameraDisplay:
@@ -44,7 +39,7 @@ class CameraDisplay:
         self.mouse_y = 0
 
     def get_mouse_in_window_space(self):
-        return [self.mouse_x-self.window_pos_x, self.mouse_y-self.window_pos_y]
+        return [self.mouse_x - self.window_pos_x, self.mouse_y - self.window_pos_y]
 
     def get_mouse_in_image_space(self):
         # Calculate mouse position in window space first
@@ -52,22 +47,18 @@ class CameraDisplay:
         mouse_window_y = self.mouse_y - self.window_pos_y
 
         # Scale to image space based on current zoom level
-        return (int(mouse_window_x * self.scale),
-                int(mouse_window_y * self.scale))
-
+        return (int(mouse_window_x * self.scale), int(mouse_window_y * self.scale))
 
     def get_mouse_in_field_space(self):
-
         point_x, point_y = self.get_mouse_in_image_space()
 
         ret = self.state.camera1_quad.point_to_field(point_x, point_y)
         if ret is None:
-            return 0,0
+            return 0, 0
         f_x, f_y = ret
 
         # Scale to image space based on current zoom level
         return (f_x, f_y)
-
 
     def draw(self):
         """
@@ -88,7 +79,9 @@ class CameraDisplay:
         cursor_pos_x, cursor_pos_y = imgui.get_cursor_screen_pos()
 
         self.mouse_x, self.mouse_y = imgui.get_io().mouse_pos
-        self.state.set_c1_cursor([self.mouse_x-self.window_pos_x, self.mouse_y-self.window_pos_y])
+        self.state.set_c1_cursor(
+            [self.mouse_x - self.window_pos_x, self.mouse_y - self.window_pos_y]
+        )
 
         # Set default window size for OpenCV Image window
         default_width = 640
@@ -103,14 +96,18 @@ class CameraDisplay:
         # Calculate if the mouse is inside the image and its position in image coordinates
         if tex_id:
             avail_width = imgui.get_content_region_available_width()
-            self.scale = self.source.width / avail_width;
+            self.scale = self.source.width / avail_width
             aspect_ratio = self.source.width / self.source.height
             display_width = avail_width
             display_height = avail_width / aspect_ratio
 
             # Check if mouse is inside the image area
-            mouse_in_image = (self.window_pos_x <= self.mouse_x <= self.window_pos_x + display_width and
-                            self.window_pos_y <= self.mouse_y <= self.window_pos_y + display_height)
+            mouse_in_image = (
+                self.window_pos_x <= self.mouse_x <= self.window_pos_x + display_width
+                and self.window_pos_y
+                <= self.mouse_y
+                <= self.window_pos_y + display_height
+            )
 
             if mouse_in_image:
                 # Calculate relative position in the image (0-1)
@@ -118,13 +115,13 @@ class CameraDisplay:
                 rel_y = (self.mouse_y - self.window_pos_y) * self.scale
 
                 # Convert to image pixel coordinates
-                img_x = int(rel_x) # * self.source.width)
-                img_y = int(rel_y) # * self.source.height)
+                img_x = int(rel_x)  # * self.source.width)
+                img_y = int(rel_y)  # * self.source.height)
 
                 # Update cursor position in image space
                 self.state.c1_cursor_image_pos = (img_x, img_y)
                 self.state.c1_cursor_in_image = True
-#                print(f"Cursor in image: ({img_x}, {img_y})")
+            #                print(f"Cursor in image: ({img_x}, {img_y})")
             else:
                 self.state.c1_cursor_image_pos = None
                 self.state.c1_cursor_in_image = False
@@ -148,7 +145,14 @@ class CameraDisplay:
             draw_list = imgui.get_window_draw_list()
 
             # Draw POIs (points) on the camera view
-            if self.state.c1_show_mines and self.state.camera1_points and all(isinstance(p, list) and len(p) == 2 for p in self.state.camera1_points):
+            if (
+                self.state.c1_show_mines
+                and self.state.camera1_points
+                and all(
+                    isinstance(p, list) and len(p) == 2
+                    for p in self.state.camera1_points
+                )
+            ):
                 # Calculate scaling factors
                 scale_x = display_width / self.source.width
                 scale_y = display_height / self.source.height
@@ -157,7 +161,9 @@ class CameraDisplay:
                 for i, (field_x, field_y) in enumerate(self.state.poi_positions):
                     # Create a quad from the camera points with field size
                     try:
-                        quad = Quad(self.state.camera1_points, field_size=self.state.field_size)
+                        quad = Quad(
+                            self.state.camera1_points, field_size=self.state.field_size
+                        )
                         # Convert directly from field to camera coordinates
                         camera_coords = quad.field_to_point(field_x, field_y)
 
@@ -176,7 +182,7 @@ class CameraDisplay:
                             r, g, b = 1.0, 0.0, 0.0  # Default to red
 
                             # Try to find the minimum distance from any car to this POI
-                            min_distance = float('inf')
+                            min_distance = float("inf")
 
                             # Calculate distances if we have cars
                             if self.state.car_field_positions:
@@ -186,14 +192,16 @@ class CameraDisplay:
                                 # Check each car's distance to this POI
                                 for car_x, car_y in self.state.car_field_positions:
                                     # Calculate Euclidean distance
-                                    dist = ((car_x - poi_x)**2 + (car_y - poi_y)**2)**0.5
+                                    dist = (
+                                        (car_x - poi_x) ** 2 + (car_y - poi_y) ** 2
+                                    ) ** 0.5
                                     min_distance = min(min_distance, dist)
 
                             # Set color based on POI ranges (use first 3 values if available)
                             # Green: beyond the safe distance
                             # Yellow: in caution zone
                             # Red: in danger zone
-                            if min_distance != float('inf'):
+                            if min_distance != float("inf"):
                                 # Get thresholds from poi_ranges
                                 if len(self.state.poi_ranges) >= 3:
                                     safe_distance = self.state.poi_ranges[0]
@@ -222,22 +230,31 @@ class CameraDisplay:
                             # Create colors with the determined RGB values
                             white_color = imgui.get_color_u32_rgba(1.0, 1.0, 1.0, 1.0)
                             point_color = imgui.get_color_u32_rgba(r, g, b, 1.0)
-                            fill_color = imgui.get_color_u32_rgba(r, g, b, 0.5)  # Semi-transparent
+                            fill_color = imgui.get_color_u32_rgba(
+                                r, g, b, 0.5
+                            )  # Semi-transparent
 
                             # Draw triangle (pointing upward)
                             draw_list.add_triangle(
-                                screen_x, screen_y - marker_size,               # top vertex
-                                screen_x - marker_size, screen_y + marker_size,  # bottom left vertex
-                                screen_x + marker_size, screen_y + marker_size,  # bottom right vertex
-                                point_color, 2.0  # outline width
+                                screen_x,
+                                screen_y - marker_size,  # top vertex
+                                screen_x - marker_size,
+                                screen_y + marker_size,  # bottom left vertex
+                                screen_x + marker_size,
+                                screen_y + marker_size,  # bottom right vertex
+                                point_color,
+                                2.0,  # outline width
                             )
 
                             # Add filled triangle with semi-transparency
                             draw_list.add_triangle_filled(
-                                screen_x, screen_y - marker_size,               # top vertex
-                                screen_x - marker_size, screen_y + marker_size,  # bottom left vertex
-                                screen_x + marker_size, screen_y + marker_size,  # bottom right vertex
-                                fill_color
+                                screen_x,
+                                screen_y - marker_size,  # top vertex
+                                screen_x - marker_size,
+                                screen_y + marker_size,  # bottom left vertex
+                                screen_x + marker_size,
+                                screen_y + marker_size,  # bottom right vertex
+                                fill_color,
                             )
 
                             # Draw POI number
@@ -245,16 +262,18 @@ class CameraDisplay:
                                 screen_x + marker_size + 2,
                                 screen_y - marker_size - 2,
                                 white_color,
-                                f"Point {i+1}"
+                                f"Point {i + 1}",
                             )
-                    except Exception as e:
+                    except Exception:
                         # Silently fail if coordinate transformation doesn't work
                         pass
 
             # Crosshairs are now drawn directly on the frame in FrameProcessor.annotate_frame
 
             # Check for mouse clicks inside the image
-            if imgui.is_item_hovered() and imgui.is_mouse_clicked(0):  # 0 = left mouse button
+            if imgui.is_item_hovered() and imgui.is_mouse_clicked(
+                0
+            ):  # 0 = left mouse button
                 # Get mouse position
                 mouse_x, mouse_y = imgui.get_io().mouse_pos
 
@@ -267,26 +286,34 @@ class CameraDisplay:
                 frame_y = int(rel_y * self.source.height)
 
                 # Print to console
-                print(f"Click at video position: x={frame_x}, y={frame_y} (relative: {rel_x:.3f}, {rel_y:.3f})")
+                print(
+                    f"Click at video position: x={frame_x}, y={frame_y} (relative: {rel_x:.3f}, {rel_y:.3f})"
+                )
 
                 # Check if we're waiting to set a camera point
                 if self.state.waiting_for_camera1_point >= 0:
                     # Set the camera 1 point
                     point_idx = self.state.waiting_for_camera1_point
                     self.state.set_camera_point(1, point_idx, frame_x, frame_y)
-                    print(f"Set Camera 1 Point {point_idx+1} to ({frame_x}, {frame_y})")
+                    print(
+                        f"Set Camera 1 Point {point_idx + 1} to ({frame_x}, {frame_y})"
+                    )
 
                 # Check if we're waiting to set a POI position (allow POI setting from camera view)
                 elif self.state.waiting_for_poi_point >= 0:
                     # Convert camera coordinates to field coordinates
-                    field_position = self.state.camera_to_field_position(frame_x, frame_y)
+                    field_position = self.state.camera_to_field_position(
+                        frame_x, frame_y
+                    )
 
                     if field_position:
                         # Set the POI position
                         point_idx = self.state.waiting_for_poi_point
                         field_x, field_y = field_position
                         self.state.set_poi_position(point_idx, field_x, field_y)
-                        print(f"Set POI {point_idx+1} to field position ({field_x:.1f}, {field_y:.1f}) from camera view")
+                        print(
+                            f"Set POI {point_idx + 1} to field position ({field_x:.1f}, {field_y:.1f}) from camera view"
+                        )
 
         imgui.end()
 
@@ -334,24 +361,28 @@ def resize_with_aspect_ratio(image, width=None, height=None, inter=cv2.INTER_ARE
 
     return cv2.resize(image, dim, interpolation=inter)
 
+
 class FrameProcessor:
     """
     Class to handle frame processing, detection, and visualization.
     """
+
     def __init__(self):
         # Initialize tracking and visualization components
         self.tracker = sv.ByteTrack()
         self.smoother = sv.DetectionsSmoother()
         self.mask_annotator = sv.MaskAnnotator()
         self.old_gray = None
-        self.old_scaled_gray = None  # Scaled-resolution grayscale for faster optical flow
+        self.old_scaled_gray = (
+            None  # Scaled-resolution grayscale for faster optical flow
+        )
 
         # Initialize flow fields
         self.flow = None  # Will store optical flow data
         self.flow_scale = 1.0  # Will be set dynamically
 
         # Flow analysis settings
-        self.flow_verbose = True    # Set to True for detailed flow logging
+        self.flow_verbose = True  # Set to True for detailed flow logging
         # Flow scale will be set dynamically based on state.optical_flow_scale
 
         # COCO dataset vehicle classes (2: car, 5: bus, 7: truck)
@@ -391,23 +422,43 @@ class FrameProcessor:
 
         # Use the app_state's optical flow scale factor if available
         flow_scale_factor = 0.75  # Default value
-        if hasattr(source, 'state') and hasattr(source.state, 'optical_flow_scale'):
+        if hasattr(source, "state") and hasattr(source.state, "optical_flow_scale"):
             flow_scale_factor = source.state.optical_flow_scale
 
         # Create scaled image for faster optical flow processing
         scaled_width = int(frame.shape[1] * flow_scale_factor)
         scaled_height = int(frame.shape[0] * flow_scale_factor)
-        scaled_gray = cv2.resize(frame_gray, (scaled_width, scaled_height), interpolation=cv2.INTER_AREA)
+        scaled_gray = cv2.resize(
+            frame_gray, (scaled_width, scaled_height), interpolation=cv2.INTER_AREA
+        )
 
         # Update flow scale factor
-        self.flow_scale = 1.0 / flow_scale_factor  # Scale factor to convert from scaled flow to full-res coordinates
+        self.flow_scale = (
+            1.0 / flow_scale_factor
+        )  # Scale factor to convert from scaled flow to full-res coordinates
 
         f_start_time = time.time()
-        if hasattr(self, 'old_scaled_gray') and self.old_scaled_gray is not None and self.old_gray is not None:
+        if (
+            hasattr(self, "old_scaled_gray")
+            and self.old_scaled_gray is not None
+            and self.old_gray is not None
+        ):
             # Calculate sparse optical flow for visualization (still using full resolution)
-            lk_params = dict(winSize=(15, 15), maxLevel=2, criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03))
-            p0 = cv2.goodFeaturesToTrack(self.old_gray, maxCorners=100, qualityLevel=0.3, minDistance=7, blockSize=7)
-            p1, st, err = cv2.calcOpticalFlowPyrLK(self.old_gray, frame_gray, p0, None, **lk_params)
+            lk_params = dict(
+                winSize=(15, 15),
+                maxLevel=2,
+                criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03),
+            )
+            p0 = cv2.goodFeaturesToTrack(
+                self.old_gray,
+                maxCorners=100,
+                qualityLevel=0.3,
+                minDistance=7,
+                blockSize=7,
+            )
+            p1, st, err = cv2.calcOpticalFlowPyrLK(
+                self.old_gray, frame_gray, p0, None, **lk_params
+            )
 
             good_new = p1[st == 1]
             good_old = p0[st == 1]
@@ -417,7 +468,9 @@ class FrameProcessor:
             for i, (new, old) in enumerate(zip(good_new, good_old)):
                 a, b = new.ravel()
                 c, d = old.ravel()
-                mask = cv2.line(mask, (int(a), int(b)), (int(c), int(d)), (0, 0, 255), 2)
+                mask = cv2.line(
+                    mask, (int(a), int(b)), (int(c), int(d)), (0, 0, 255), 2
+                )
                 of_frame = cv2.circle(of_frame, (int(a), int(b)), 5, (0, 0, 255), -1)
                 of_frame = cv2.add(of_frame, mask)
 
@@ -427,7 +480,11 @@ class FrameProcessor:
             )
 
             # Scale the 3/4-resolution flow to full resolution
-            self.flow = cv2.resize(scaled_flow, (frame.shape[1], frame.shape[0]), interpolation=cv2.INTER_LINEAR)
+            self.flow = cv2.resize(
+                scaled_flow,
+                (frame.shape[1], frame.shape[0]),
+                interpolation=cv2.INTER_LINEAR,
+            )
 
             # Multiply flow vectors by scale factor to account for the scaling
             self.flow *= self.flow_scale
@@ -454,8 +511,8 @@ class FrameProcessor:
         detections = detections[mask]
 
         # Apply tracking and smoothing
-        #detections = self.tracker.update_with_detections(detections)
-        #detections = self.smoother.update_with_detections(detections)
+        # detections = self.tracker.update_with_detections(detections)
+        # detections = self.smoother.update_with_detections(detections)
 
         # Extract vehicle detections
         car_detections = []
@@ -478,7 +535,15 @@ class FrameProcessor:
         # Return the original frame, detections, and car_detections
         return of_frame, detections, car_detections
 
-    def annotate_frame(self, frame, model, detections, car_detections, quad_points=None, cursor_pos=None):
+    def annotate_frame(
+        self,
+        frame,
+        model,
+        detections,
+        car_detections,
+        quad_points=None,
+        cursor_pos=None,
+    ):
         """
         Annotate a processed frame with detection visualizations and optional quad overlay
 
@@ -500,7 +565,8 @@ class FrameProcessor:
         if detections is not None:
             # Annotate with mask annotator
             output_frame = self.mask_annotator.annotate(
-                scene=output_frame, detections=detections)
+                scene=output_frame, detections=detections
+            )
 
         # Get class names for car detections if model is provided
         class_names = model.names if model is not None else {}
@@ -530,12 +596,12 @@ class FrameProcessor:
                     # Draw number (white text)
                     cv2.putText(
                         output_frame,
-                        f"{i+1}",
+                        f"{i + 1}",
                         (x + 5, y - 5),
                         cv2.FONT_HERSHEY_SIMPLEX,
                         0.7,
                         (255, 255, 255),
-                        2
+                        2,
                     )
 
         # Draw crosshairs if cursor position is provided
@@ -554,7 +620,7 @@ class FrameProcessor:
                     (img_x, 0),
                     (img_x, h),
                     (0, 255, 255),  # Yellow (BGR format)
-                    1  # Even thicker line for better visibility
+                    1,  # Even thicker line for better visibility
                 )
 
                 # Horizontal line (bright yellow)
@@ -563,7 +629,7 @@ class FrameProcessor:
                     (0, img_y),
                     (w, img_y),
                     (0, 255, 255),  # Yellow (BGR format)
-                    1  # Even thicker line for better visibility
+                    1,  # Even thicker line for better visibility
                 )
 
                 # Add a white dot at the center of the crosshairs
@@ -572,7 +638,7 @@ class FrameProcessor:
                     (img_x, img_y),
                     5,  # 5 pixel radius
                     (255, 255, 255),  # White
-                    -1  # Filled circle
+                    -1,  # Filled circle
                 )
 
                 # Add a black outline to make it stand out
@@ -581,7 +647,7 @@ class FrameProcessor:
                     (img_x, img_y),
                     5,  # 5 pixel radius
                     (0, 0, 0),  # Black
-                    1  # 1 pixel outline
+                    1,  # 1 pixel outline
                 )
 
         # Add car bounding boxes if available
@@ -624,17 +690,6 @@ class FrameProcessor:
 
             # Calculate label position
             label_size, _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 2)
-            y1_label = max(y1, label_size[1])
-
-            # Uncomment these if you want to add label text
-            # Draw label background
-            # bg_color = (0, 255, 255)
-            # cv2.rectangle(output_frame, (x1, y1_label - label_size[1] - 5),
-            #              (x1 + label_size[0], y1_label), bg_color, -1)
-            #
-            # # Draw label text
-            # cv2.putText(output_frame, label, (x1, y1_label - 5),
-            #            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 2)
 
         return output_frame
 
@@ -657,13 +712,16 @@ class FrameProcessor:
 
         if flow is None:
             # Use self.flow if it exists, otherwise set to None
-            flow = self.flow if hasattr(self, 'flow') else None
+            flow = self.flow if hasattr(self, "flow") else None
 
         if flow is None or not car_detections:
             # Return original detections with zero flow if no flow data is available
             if verbose:
                 print("No flow data available or no detections to process")
-            return [(x1, y1, x2, y2, conf, cls, 0, 0) for x1, y1, x2, y2, conf, cls in car_detections]
+            return [
+                (x1, y1, x2, y2, conf, cls, 0, 0)
+                for x1, y1, x2, y2, conf, cls in car_detections
+            ]
 
         enhanced_detections = []
 
@@ -680,12 +738,14 @@ class FrameProcessor:
             # Make sure the ROI is within image bounds
             h, w = flow.shape[0:2]
             x1, y1 = max(0, x1), max(0, y1)
-            x2, y2 = min(w-1, x2), min(h-1, y2)
+            x2, y2 = min(w - 1, x2), min(h - 1, y2)
 
             # Skip if ROI is invalid
             if x1 >= x2 or y1 >= y2:
                 if verbose:
-                    print(f"Detection #{i+1}: Invalid ROI dimensions, skipping flow analysis")
+                    print(
+                        f"Detection #{i + 1}: Invalid ROI dimensions, skipping flow analysis"
+                    )
                 enhanced_detections.append((x1, y1, x2, y2, conf, cls, 0, 0))
                 continue
 
@@ -708,21 +768,29 @@ class FrameProcessor:
                 # Log flow information if verbose
                 if verbose:
                     center_x, center_y = (x1 + x2) // 2, (y1 + y2) // 2
-                    vehicle_type = "car" if cls == 2 else "truck" if cls == 7 else f"class_{cls}"
+                    vehicle_type = (
+                        "car" if cls == 2 else "truck" if cls == 7 else f"class_{cls}"
+                    )
 
-                    print(f"Detection #{i+1} ({vehicle_type}, conf: {conf:.2f}): ")
+                    print(f"Detection #{i + 1} ({vehicle_type}, conf: {conf:.2f}): ")
                     if flow_magnitude > 0.5:
                         print(f"  Flow: ({mean_flow_x:.2f}, {mean_flow_y:.2f}) pixels")
-                        print(f"  Magnitude: {flow_magnitude:.2f} pixels, Direction: {flow_direction:.1f}°")
-                        print(f"  Predicted center: ({center_x}, {center_y}) → ({new_center_x:.1f}, {new_center_y:.1f})")
+                        print(
+                            f"  Magnitude: {flow_magnitude:.2f} pixels, Direction: {flow_direction:.1f}°"
+                        )
+                        print(
+                            f"  Predicted center: ({center_x}, {center_y}) → ({new_center_x:.1f}, {new_center_y:.1f})"
+                        )
                     else:
                         print(f"  Minimal flow detected ({flow_magnitude:.2f} pixels)")
 
                 # Add to enhanced detections with flow values
-                enhanced_detections.append((x1, y1, x2, y2, conf, cls, mean_flow_x, mean_flow_y))
+                enhanced_detections.append(
+                    (x1, y1, x2, y2, conf, cls, mean_flow_x, mean_flow_y)
+                )
             except Exception as e:
                 if verbose:
-                    print(f"Detection #{i+1}: Error processing flow: {e}")
+                    print(f"Detection #{i + 1}: Error processing flow: {e}")
                 enhanced_detections.append((x1, y1, x2, y2, conf, cls, 0, 0))
 
         if verbose:
@@ -730,7 +798,9 @@ class FrameProcessor:
 
         return enhanced_detections
 
-    def predict_disappeared_detections(self, current_detections, previous_detections, flow=None, verbose=None):
+    def predict_disappeared_detections(
+        self, current_detections, previous_detections, flow=None, verbose=None
+    ):
         """
         Predict positions of detections that disappeared between frames using optical flow
 
@@ -749,7 +819,7 @@ class FrameProcessor:
 
         if flow is None:
             # Use self.flow if it exists, otherwise set to None
-            flow = self.flow if hasattr(self, 'flow') else None
+            flow = self.flow if hasattr(self, "flow") else None
 
         if flow is None or not previous_detections:
             # Return empty list if no flow data or previous detections
@@ -768,7 +838,9 @@ class FrameProcessor:
         predicted_detections = []
 
         if verbose:
-            print(f"\n--- Predicting Disappeared Detections ({len(previous_detections)} previous, {len(current_detections)} current) ---")
+            print(
+                f"\n--- Predicting Disappeared Detections ({len(previous_detections)} previous, {len(current_detections)} current) ---"
+            )
 
         # For each previous detection, check if it disappeared
         for i, det in enumerate(previous_detections):
@@ -792,7 +864,10 @@ class FrameProcessor:
                 threshold = 30  # Pixel distance threshold to consider as same detection
 
                 for cur_center_x, cur_center_y in current_centers:
-                    dist = ((cur_center_x - prev_center_x)**2 + (cur_center_y - prev_center_y)**2)**0.5
+                    dist = (
+                        (cur_center_x - prev_center_x) ** 2
+                        + (cur_center_y - prev_center_y) ** 2
+                    ) ** 0.5
                     if dist < threshold:
                         detection_exists = True
                         break
@@ -819,17 +894,17 @@ class FrameProcessor:
                             flow_y = 0.7 * flow_y + 0.3 * prev_flow_y
 
                         # Check if flow magnitude is significant
-                        flow_magnitude = (flow_x**2 + flow_y**2)**0.5
+                        flow_magnitude = (flow_x**2 + flow_y**2) ** 0.5
                         if flow_magnitude > 0.5:  # Only use if flow is significant
                             # Predict new center
                             new_center_x = int(prev_center_x + flow_x)
                             new_center_y = int(prev_center_y + flow_y)
 
                             # Calculate new bounding box coordinates
-                            new_x1 = int(new_center_x - width/2)
-                            new_y1 = int(new_center_y - height/2)
-                            new_x2 = int(new_center_x + width/2)
-                            new_y2 = int(new_center_y + height/2)
+                            new_x1 = int(new_center_x - width / 2)
+                            new_y1 = int(new_center_y - height / 2)
+                            new_x2 = int(new_center_x + width / 2)
+                            new_y2 = int(new_center_y + height / 2)
 
                             # Check if this predicted detection would overlap with any existing detection
                             predicted_box_overlaps = False
@@ -839,8 +914,12 @@ class FrameProcessor:
                                 cur_x1, cur_y1, cur_x2, cur_y2 = cur_det[0:4]
 
                                 # Calculate intersection area
-                                x_overlap = max(0, min(new_x2, cur_x2) - max(new_x1, cur_x1))
-                                y_overlap = max(0, min(new_y2, cur_y2) - max(new_y1, cur_y1))
+                                x_overlap = max(
+                                    0, min(new_x2, cur_x2) - max(new_x1, cur_x1)
+                                )
+                                y_overlap = max(
+                                    0, min(new_y2, cur_y2) - max(new_y1, cur_y1)
+                                )
                                 overlap_area = x_overlap * y_overlap
 
                                 # Calculate predicted detection area
@@ -850,23 +929,48 @@ class FrameProcessor:
                                 if pred_area > 0 and overlap_area / pred_area > 0.3:
                                     predicted_box_overlaps = True
                                     if verbose:
-                                        print(f"  Skipping predicted detection - overlaps with existing detection")
+                                        print(
+                                            "  Skipping predicted detection - overlaps with existing detection"
+                                        )
                                     break
 
                             # Only add if it doesn't significantly overlap with any existing detection
                             if not predicted_box_overlaps:
                                 # Slightly reduce confidence for predicted detections
-                                new_conf = max(0.1, conf * 0.8)  # Reduce confidence but keep minimum of 0.1
+                                new_conf = max(
+                                    0.1, conf * 0.8
+                                )  # Reduce confidence but keep minimum of 0.1
 
                                 # Add to predicted detections with flow data
-                                predicted_det = (new_x1, new_y1, new_x2, new_y2, new_conf, cls_id, flow_x, flow_y)
+                                predicted_det = (
+                                    new_x1,
+                                    new_y1,
+                                    new_x2,
+                                    new_y2,
+                                    new_conf,
+                                    cls_id,
+                                    flow_x,
+                                    flow_y,
+                                )
                                 predicted_detections.append(predicted_det)
 
                                 if verbose:
-                                    vehicle_type = "car" if cls_id == 2 else "truck" if cls_id == 7 else f"class_{cls_id}"
-                                    print(f"Predicted disappeared {vehicle_type} (prev conf: {conf:.2f}, new: {new_conf:.2f})")
-                                    print(f"  Moved from ({prev_center_x}, {prev_center_y}) to ({new_center_x}, {new_center_y})")
-                                    print(f"  Flow: ({flow_x:.2f}, {flow_y:.2f}) pixels")
+                                    vehicle_type = (
+                                        "car"
+                                        if cls_id == 2
+                                        else "truck"
+                                        if cls_id == 7
+                                        else f"class_{cls_id}"
+                                    )
+                                    print(
+                                        f"Predicted disappeared {vehicle_type} (prev conf: {conf:.2f}, new: {new_conf:.2f})"
+                                    )
+                                    print(
+                                        f"  Moved from ({prev_center_x}, {prev_center_y}) to ({new_center_x}, {new_center_y})"
+                                    )
+                                    print(
+                                        f"  Flow: ({flow_x:.2f}, {flow_y:.2f}) pixels"
+                                    )
             except Exception as e:
                 if verbose:
                     print(f"Error predicting detection #{i}: {e}")
@@ -877,7 +981,17 @@ class FrameProcessor:
 
         return predicted_detections
 
-    def process_and_annotate_frame(self, source, model, quad, conf_threshold=0.25, use_flow=True, draw_quad=True, cursor_pos=None, app_state=None):
+    def process_and_annotate_frame(
+        self,
+        source,
+        model,
+        quad,
+        conf_threshold=0.25,
+        use_flow=True,
+        draw_quad=True,
+        cursor_pos=None,
+        app_state=None,
+    ):
         """
         Process a frame and annotate it (convenience method combining the two steps)
 
@@ -894,18 +1008,26 @@ class FrameProcessor:
         Returns:
             Tuple of (annotated_frame, car_detections)
         """
-        frame, detections, car_detections = self.process_frame(source, model, quad, conf_threshold)
+        frame, detections, car_detections = self.process_frame(
+            source, model, quad, conf_threshold
+        )
 
         # Enhance detections with optical flow if requested
         if use_flow and len(car_detections) > 0:
             car_detections = self.combine_detections_with_flow(car_detections)
 
         # Check for disappeared detections if we have app_state with previous detections
-        if use_flow and hasattr(self, 'flow') and self.flow is not None and app_state and hasattr(app_state, 'previous_car_detections') and app_state.previous_car_detections:
+        if (
+            use_flow
+            and hasattr(self, "flow")
+            and self.flow is not None
+            and app_state
+            and hasattr(app_state, "previous_car_detections")
+            and app_state.previous_car_detections
+        ):
             # Predict positions of disappeared objects
             predicted_detections = self.predict_disappeared_detections(
-                car_detections,
-                app_state.previous_car_detections
+                car_detections, app_state.previous_car_detections
             )
 
             # Append any predicted detections to our list
@@ -915,12 +1037,7 @@ class FrameProcessor:
         # Pass quad points and cursor position to annotate_frame
         quad_points = quad if draw_quad else None
         annotated_frame = self.annotate_frame(
-            frame,
-            model,
-            detections,
-            car_detections,
-            quad_points,
-            cursor_pos
+            frame, model, detections, car_detections, quad_points, cursor_pos
         )
 
         return annotated_frame, car_detections
@@ -928,15 +1045,15 @@ class FrameProcessor:
 
 def main():
     camera_list = []
-    for camera_info in sources.enumerate_avf_sources(): #enumerate_cameras():
+    for camera_info in sources.enumerate_avf_sources():  # enumerate_cameras():
         # Format: [(index, name), ...]
-        print(f'{camera_info[0]}: {camera_info[1]}')
+        print(f"{camera_info[0]}: {camera_info[1]}")
         camera_list.append(camera_info)
 
-    #model=YOLO('yolov9s.pt')
-    #model=YOLO('yolov8s.pt')
-    #model=YOLO('yolo11n.pt')
-    model=YOLO('yolov5nu.pt')
+    # model=YOLO('yolov9s.pt')
+    # model=YOLO('yolov8s.pt')
+    # model=YOLO('yolo11n.pt')
+    model = YOLO("yolov5nu.pt")
 
     # Initialize frame processor
     frame_processor = FrameProcessor()
@@ -965,13 +1082,15 @@ def main():
                 width=1920,
                 height=1080,
                 message=f"Video File Error: {str(e)}",
-                state=app_state
+                state=app_state,
             )
     else:
         # Use camera source
         camera1_id = app_state.get_camera1_id()
         try:
-            source_1 = sources.AVFSource(camera1_id if camera1_id is not None else 0, state=app_state)
+            source_1 = sources.AVFSource(
+                camera1_id if camera1_id is not None else 0, state=app_state
+            )
             print(f"Using camera: {camera1_id}")
         except Exception as e:
             print(f"Error initializing camera: {e}")
@@ -980,22 +1099,15 @@ def main():
                 width=1920,
                 height=1080,
                 message=f"Camera Error: {str(e)}",
-                state=app_state
+                state=app_state,
             )
-
-    # Secondary video source (no longer used actively but kept for reference)
-    try:
-        source_2 = sources.VideoSource('../AI_angle_2.mov')
-    except Exception as e:
-        print(f"Couldn't open AI_angle_2.mov: {e}")
-        source_2 = None
 
     camera_display = CameraDisplay(app_state, source_1)
 
     control_panel = ControlPanel(app_state, field_viz, camera_display)
 
     # Frame timing variables
-    frame_time = 1.0/60.0  # Target 60 FPS
+    frame_time = 1.0 / 60.0  # Target 60 FPS
     last_time = glfw.get_time()
 
     running = True
@@ -1043,14 +1155,18 @@ def main():
             # Only run YOLO processing if not paused
             if not app_state.processing_paused:
                 # Use the new FrameProcessor class with quad drawing enabled
-                processed_frame, car_detections = frame_processor.process_and_annotate_frame(
-                    source_1,
-                    model,
-                    app_state.camera1_points,
-                    use_flow=True,
-                    draw_quad=True,  # Draw the quad directly on the frame
-                    cursor_pos=app_state.c1_cursor_image_pos if app_state.c1_cursor_in_image else None,
-                    app_state=app_state  # Pass app_state for previous detections and optical flow settings
+                processed_frame, car_detections = (
+                    frame_processor.process_and_annotate_frame(
+                        source_1,
+                        model,
+                        app_state.camera1_points,
+                        use_flow=True,
+                        draw_quad=True,  # Draw the quad directly on the frame
+                        cursor_pos=app_state.c1_cursor_image_pos
+                        if app_state.c1_cursor_in_image
+                        else None,
+                        app_state=app_state,  # Pass app_state for previous detections and optical flow settings
+                    )
                 )
                 # Update detections only when processing is active
                 app_state.set_car_detections(car_detections)
@@ -1064,7 +1180,9 @@ def main():
                     None,
                     [],
                     quad_points=app_state.camera1_points,
-                    cursor_pos=app_state.c1_cursor_image_pos if app_state.c1_cursor_in_image else None
+                    cursor_pos=app_state.c1_cursor_image_pos
+                    if app_state.c1_cursor_in_image
+                    else None,
                 )
 
             # Always update texture with the current frame (processed or raw)
@@ -1083,7 +1201,9 @@ def main():
                 if app_state.use_video_file and app_state.video_file_path:
                     # Use video file as source
                     try:
-                        new_source = sources.VideoSource(app_state.video_file_path, state=app_state)
+                        new_source = sources.VideoSource(
+                            app_state.video_file_path, state=app_state
+                        )
                         # Update the camera display with the new source
                         source_1 = new_source
                         camera_display.source = new_source
@@ -1096,7 +1216,7 @@ def main():
                             width=1920,
                             height=1080,
                             message=error_message,
-                            state=app_state
+                            state=app_state,
                         )
                         # Update the camera display with the placeholder source
                         source_1 = new_source
@@ -1107,7 +1227,9 @@ def main():
                     camera1_id = app_state.get_camera1_id()
                     # Reinitialize camera source with the selected camera ID
                     try:
-                        new_source = sources.AVFSource(camera1_id if camera1_id is not None else 0, state=app_state)
+                        new_source = sources.AVFSource(
+                            camera1_id if camera1_id is not None else 0, state=app_state
+                        )
                         # Update the camera display with the new source
                         source_1 = new_source
                         camera_display.source = new_source
@@ -1120,7 +1242,7 @@ def main():
                             width=1920,
                             height=1080,
                             message=error_message,
-                            state=app_state
+                            state=app_state,
                         )
                         # Update the camera display with the placeholder source
                         source_1 = new_source
@@ -1128,7 +1250,6 @@ def main():
 
             # Draw the field visualization
             field_viz.draw()
-
 
             gl.glClearColor(0.1, 0.1, 0.1, 1)
             gl.glClear(gl.GL_COLOR_BUFFER_BIT)
@@ -1141,6 +1262,7 @@ def main():
     app_state.save_config()
     impl.shutdown()
     glfw.terminate()
+
 
 if __name__ == "__main__":
     main()
