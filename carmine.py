@@ -344,9 +344,11 @@ class FrameProcessor:
         self.smoother = sv.DetectionsSmoother()
         self.mask_annotator = sv.MaskAnnotator()
         self.old_gray = None
+        self.old_scaled_gray = None  # 3/4-resolution grayscale for faster optical flow
 
         # Flow analysis settings
-        self.flow_verbose = True  # Set to True for detailed flow logging
+        self.flow_verbose = True    # Set to True for detailed flow logging
+        # Flow scale will be set dynamically based on state.optical_flow_scale
 
         # COCO dataset vehicle classes (2: car, 5: bus, 7: truck)
         self.vehicle_classes = [2, 7]
@@ -380,15 +382,26 @@ class FrameProcessor:
         of_frame = frame.copy()
         mask = np.zeros_like(of_frame)
 
-        # Red cars, so red channel instead of normal gray scale conversion
+        # Red cars, so red channel instead of normal gray scale conversion for better vehicle contrast
         _, _, frame_gray = cv2.split(frame)
-
+        
+        # Use the app_state's optical flow scale factor if available
+        flow_scale_factor = 0.75  # Default value
+        if hasattr(source, 'state') and hasattr(source.state, 'optical_flow_scale'):
+            flow_scale_factor = source.state.optical_flow_scale
+        
+        # Create scaled image for faster optical flow processing
+        scaled_width = int(frame.shape[1] * flow_scale_factor)
+        scaled_height = int(frame.shape[0] * flow_scale_factor)
+        scaled_gray = cv2.resize(frame_gray, (scaled_width, scaled_height), interpolation=cv2.INTER_AREA)
+        
         # Initialize flow field
         self.flow = None
-
+        self.flow_scale = 1.0 / flow_scale_factor  # Scale factor to convert from scaled flow to full-res coordinates
+        
         f_start_time = time.time()
-        if self.old_gray is not None:
-            # Calculate sparse optical flow for visualization
+        if hasattr(self, 'old_scaled_gray') and self.old_scaled_gray is not None and self.old_gray is not None:
+            # Calculate sparse optical flow for visualization (still using full resolution)
             lk_params = dict(winSize=(15, 15), maxLevel=2, criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03))
             p0 = cv2.goodFeaturesToTrack(self.old_gray, maxCorners=100, qualityLevel=0.3, minDistance=7, blockSize=7)
             p1, st, err = cv2.calcOpticalFlowPyrLK(self.old_gray, frame_gray, p0, None, **lk_params)
@@ -404,16 +417,25 @@ class FrameProcessor:
                 mask = cv2.line(mask, (int(a), int(b)), (int(c), int(d)), (0, 0, 255), 2)
                 of_frame = cv2.circle(of_frame, (int(a), int(b)), 5, (0, 0, 255), -1)
                 of_frame = cv2.add(of_frame, mask)
-
-            # Calculate dense optical flow for detection integration
-            self.flow = cv2.calcOpticalFlowFarneback(
-                self.old_gray, frame_gray, None, 0.5, 3, 15, 3, 5, 1.2, 0
+                
+            # Calculate dense optical flow on scaled-size images for better performance
+            scaled_flow = cv2.calcOpticalFlowFarneback(
+                self.old_scaled_gray, scaled_gray, None, 0.5, 3, 15, 3, 5, 1.2, 0
             )
+            
+            # Scale the 3/4-resolution flow to full resolution
+            self.flow = cv2.resize(scaled_flow, (frame.shape[1], frame.shape[0]), interpolation=cv2.INTER_LINEAR)
+            
+            # Multiply flow vectors by scale factor to account for the scaling
+            self.flow *= self.flow_scale
         else:
             # Initialize flow with zeros if this is the first frame
             self.flow = np.zeros((frame.shape[0], frame.shape[1], 2), dtype=np.float32)
 
+        # Save both full and scaled resolution grayscale images for next frame
         self.old_gray = frame_gray
+        self.old_scaled_gray = scaled_gray
+        
         print("Flow time: ", int((time.time() - f_start_time) * 1000))
 
         # Get model prediction
@@ -780,6 +802,8 @@ class FrameProcessor:
                     h, w = flow.shape[0:2]
                     if 0 <= prev_center_x < w and 0 <= prev_center_y < h:
                         # Get flow vector at this position
+                        # Note: No need to adjust for flow_scale here as the flow values were already
+                        # scaled up when we resized the flow field from half resolution to full resolution
                         flow_x = flow[prev_center_y, prev_center_x, 0]
                         flow_y = flow[prev_center_y, prev_center_x, 1]
 
@@ -1019,7 +1043,7 @@ def main():
                     use_flow=True,
                     draw_quad=True,  # Draw the quad directly on the frame
                     cursor_pos=app_state.c1_cursor_image_pos if app_state.c1_cursor_in_image else None,
-                    app_state=app_state  # Pass app_state to use previous detections for prediction
+                    app_state=app_state  # Pass app_state for previous detections and optical flow settings
                 )
                 # Update detections only when processing is active
                 app_state.set_car_detections(car_detections)

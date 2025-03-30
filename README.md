@@ -16,7 +16,7 @@ On linux:
 
 python 3.12 required (3.13 not yet supported)
 
-`uv venv -p python3.12 venv`
+`uv venv  --managed-python  -p python3.12 venv`
 
 ffmpeg is needed:
 

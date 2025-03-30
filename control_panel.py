@@ -514,6 +514,23 @@ class ControlPanel:
 
             # Display number of detected cars
             imgui.text(f"Detected cars: {len(car_positions)}")
+            
+            # Add Optical Flow Scaling slider
+            imgui.text("Optical Flow")
+            imgui.set_next_item_width(200)
+            changed_flow_scale, self.state.optical_flow_scale = imgui.slider_float(
+                "Scale", self.state.optical_flow_scale, 0.5, 1.0, "%.2f"
+            )
+            if changed_flow_scale:
+                self.state.save_config()
+            
+            if imgui.is_item_hovered():
+                imgui.begin_tooltip()
+                imgui.text("Adjust the optical flow scaling factor.")
+                imgui.text("Lower values process faster but with less precision.")
+                imgui.text("Higher values provide more accuracy but slower processing.")
+                imgui.text("Recommended: 0.75")
+                imgui.end_tooltip()
 
             # If we have cars, show their positions
             if car_positions:

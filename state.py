@@ -15,9 +15,13 @@ class State:
     def __init__(self, camera_list):
         self.camera_list = camera_list
 
-        # Camera selection
-        self.camera1_points = []
+        # Set default camera selection
         self.selected_camera1 = 0
+        
+        # Initialize essential attributes
+        self.camera1_points = [[0, 0] for _ in range(4)]
+        
+        # Initialize with default configuration
         self.reset_config()
         
         # Track the currently loaded config name
@@ -46,6 +50,9 @@ class State:
         self.c1_cursor_in_image = False  # Flag to indicate if cursor is within the image
         self.c1_cursor_field_position = None  # Cursor position in field space
         self.processing_paused = False  # Flag to control YOLO and detector processing
+        
+        # Optical flow settings
+        self.optical_flow_scale = 0.75  # Scaling factor for optical flow processing (0.5 to 1.0)
 
         self.car_detections = []  # Raw detections from YOLO
         self.previous_car_detections = []  # Store previous frame's detections for optical flow prediction
@@ -240,7 +247,8 @@ class State:
                 'c1_show_mines': self.c1_show_mines,
                 'processing_paused': self.processing_paused,
                 'use_video_file': self.use_video_file,
-                'video_file_path': self.video_file_path
+                'video_file_path': self.video_file_path,
+                'optical_flow_scale': self.optical_flow_scale
             }
 
             # Save to database
@@ -323,6 +331,10 @@ class State:
                 self.use_video_file = config['use_video_file']
             if 'video_file_path' in config:
                 self.video_file_path = config['video_file_path']
+                
+            # Load optical flow settings if available
+            if 'optical_flow_scale' in config:
+                self.optical_flow_scale = config['optical_flow_scale']
 
             # Update current config name to match what was loaded
             self.current_config_name = config_name
@@ -351,6 +363,20 @@ class State:
         ]
 
         self.poi_ranges = [45, 15, 3]
+        
+        # Default UI settings
+        if not hasattr(self, 'c1_show_carbox'):
+            self.c1_show_carbox = True
+            
+        if not hasattr(self, 'c1_show_mines'):
+            self.c1_show_mines = True
+            
+        if not hasattr(self, 'processing_paused'):
+            self.processing_paused = False
+            
+        # Default optical flow settings
+        if not hasattr(self, 'optical_flow_scale'):
+            self.optical_flow_scale = 0.75
 
 
     def calculate_poi_distances(self, car_index=0):
