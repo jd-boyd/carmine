@@ -344,7 +344,11 @@ class FrameProcessor:
         self.smoother = sv.DetectionsSmoother()
         self.mask_annotator = sv.MaskAnnotator()
         self.old_gray = None
-        self.old_scaled_gray = None  # 3/4-resolution grayscale for faster optical flow
+        self.old_scaled_gray = None  # Scaled-resolution grayscale for faster optical flow
+        
+        # Initialize flow fields
+        self.flow = None  # Will store optical flow data
+        self.flow_scale = 1.0  # Will be set dynamically
 
         # Flow analysis settings
         self.flow_verbose = True    # Set to True for detailed flow logging
@@ -395,8 +399,7 @@ class FrameProcessor:
         scaled_height = int(frame.shape[0] * flow_scale_factor)
         scaled_gray = cv2.resize(frame_gray, (scaled_width, scaled_height), interpolation=cv2.INTER_AREA)
         
-        # Initialize flow field
-        self.flow = None
+        # Update flow scale factor
         self.flow_scale = 1.0 / flow_scale_factor  # Scale factor to convert from scaled flow to full-res coordinates
         
         f_start_time = time.time()
@@ -653,7 +656,8 @@ class FrameProcessor:
             verbose = self.flow_verbose
 
         if flow is None:
-            flow = self.flow
+            # Use self.flow if it exists, otherwise set to None
+            flow = self.flow if hasattr(self, 'flow') else None
 
         if flow is None or not car_detections:
             # Return original detections with zero flow if no flow data is available
@@ -744,7 +748,8 @@ class FrameProcessor:
             verbose = self.flow_verbose
 
         if flow is None:
-            flow = self.flow
+            # Use self.flow if it exists, otherwise set to None
+            flow = self.flow if hasattr(self, 'flow') else None
 
         if flow is None or not previous_detections:
             # Return empty list if no flow data or previous detections
@@ -896,7 +901,7 @@ class FrameProcessor:
             car_detections = self.combine_detections_with_flow(car_detections)
 
         # Check for disappeared detections if we have app_state with previous detections
-        if use_flow and self.flow is not None and app_state and app_state.previous_car_detections:
+        if use_flow and hasattr(self, 'flow') and self.flow is not None and app_state and hasattr(app_state, 'previous_car_detections') and app_state.previous_car_detections:
             # Predict positions of disappeared objects
             predicted_detections = self.predict_disappeared_detections(
                 car_detections,
@@ -951,7 +956,7 @@ def main():
     # Check if using video file or camera
     if app_state.use_video_file and app_state.video_file_path:
         try:
-            source_1 = sources.VideoSource(app_state.video_file_path)
+            source_1 = sources.VideoSource(app_state.video_file_path, state=app_state)
             print(f"Using video file: {app_state.video_file_path}")
         except Exception as e:
             print(f"Error initializing video file: {e}")
@@ -959,13 +964,14 @@ def main():
             source_1 = sources.PlaceholderSource(
                 width=1920,
                 height=1080,
-                message=f"Video File Error: {str(e)}"
+                message=f"Video File Error: {str(e)}",
+                state=app_state
             )
     else:
         # Use camera source
         camera1_id = app_state.get_camera1_id()
         try:
-            source_1 = sources.AVFSource(camera1_id if camera1_id is not None else 0)
+            source_1 = sources.AVFSource(camera1_id if camera1_id is not None else 0, state=app_state)
             print(f"Using camera: {camera1_id}")
         except Exception as e:
             print(f"Error initializing camera: {e}")
@@ -973,7 +979,8 @@ def main():
             source_1 = sources.PlaceholderSource(
                 width=1920,
                 height=1080,
-                message=f"Camera Error: {str(e)}"
+                message=f"Camera Error: {str(e)}",
+                state=app_state
             )
 
     # Secondary video source (no longer used actively but kept for reference)
@@ -1076,7 +1083,7 @@ def main():
                 if app_state.use_video_file and app_state.video_file_path:
                     # Use video file as source
                     try:
-                        new_source = sources.VideoSource(app_state.video_file_path)
+                        new_source = sources.VideoSource(app_state.video_file_path, state=app_state)
                         # Update the camera display with the new source
                         source_1 = new_source
                         camera_display.source = new_source
@@ -1088,7 +1095,8 @@ def main():
                         new_source = sources.PlaceholderSource(
                             width=1920,
                             height=1080,
-                            message=error_message
+                            message=error_message,
+                            state=app_state
                         )
                         # Update the camera display with the placeholder source
                         source_1 = new_source
@@ -1099,7 +1107,7 @@ def main():
                     camera1_id = app_state.get_camera1_id()
                     # Reinitialize camera source with the selected camera ID
                     try:
-                        new_source = sources.AVFSource(camera1_id if camera1_id is not None else 0)
+                        new_source = sources.AVFSource(camera1_id if camera1_id is not None else 0, state=app_state)
                         # Update the camera display with the new source
                         source_1 = new_source
                         camera_display.source = new_source
@@ -1111,7 +1119,8 @@ def main():
                         new_source = sources.PlaceholderSource(
                             width=1920,
                             height=1080,
-                            message=error_message
+                            message=error_message,
+                            state=app_state
                         )
                         # Update the camera display with the placeholder source
                         source_1 = new_source

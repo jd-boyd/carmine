@@ -48,10 +48,11 @@ class Source:
 class PlaceholderSource(Source):
     """Source that provides a placeholder image with text when no other source is available"""
 
-    def __init__(self, width=640, height=480, message="No video source available"):
+    def __init__(self, width=640, height=480, message="No video source available", state=None):
         self._width = width
         self._height = height
         self.message = message
+        self.state = state  # Store reference to app state
 
         # Create a blank image with dark gray background
         self.frame = np.zeros((height, width, 3), dtype=np.uint8)
@@ -136,10 +137,11 @@ class StillSource(Source):
 class VideoSource(Source):
     """Source that provides frames from a video file"""
 
-    def __init__(self, filename):
+    def __init__(self, filename, state=None):
         self.frame_counter = 0
         self.video_path = filename
         self.cap = cv2.VideoCapture(self.video_path)
+        self.state = state  # Store reference to app state
 
         ret, frame = self.cap.read()
         if not ret or frame is None:
@@ -238,9 +240,10 @@ def enumerate_avf_sources():
 
 class AVFSource(VideoSource):
 
-    def __init__(self, idx):
+    def __init__(self, idx, state=None):
         self.frame_counter = 0
         self.cap = cv2.VideoCapture(idx, cv2.CAP_AVFOUNDATION)
+        self.state = state  # Store reference to app state
 
         self.last_frame_time = cv2.getTickCount() / cv2.getTickFrequency()
 
