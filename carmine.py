@@ -651,7 +651,7 @@ class ControlPanel:
         if imgui.begin("Control Panel", True):
             imgui.text("Cameras")
             changed1, self.state.selected_camera1 = imgui.combo(
-                "Camera 1", self.state.selected_camera1, [c[1] for c in self.state.camera_list]
+                "Camera", self.state.selected_camera1, [c[1] for c in self.state.camera_list]
             )
             if changed1:
                 self.state.save_config()
@@ -697,8 +697,11 @@ class ControlPanel:
             if imgui.button("Reload Config"):
                 self.state.load_config()
                 print("Configuration reloaded from file")
-
             imgui.same_line()
+            if imgui.button("Save Config"):
+                self.state.save_config()
+                print("Configuration saved to file.")
+
             if imgui.button("Config 1"):
                 try:
                     # Copy camera_1.json to config.json
@@ -726,7 +729,6 @@ class ControlPanel:
                 except Exception as e:
                     print(f"Error loading configuration 2: {e}")
 
-            imgui.same_line()
             if imgui.button("Reset to Defaults"):
                 if imgui.begin_popup_modal("Confirm Reset", True):
                     imgui.text("Are you sure you want to reset all configuration to defaults?")
